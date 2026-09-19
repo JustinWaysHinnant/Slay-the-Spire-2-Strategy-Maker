@@ -16,4 +16,4 @@ npm run build
 
 Card entries support optional acquisition floors using `Card name @ floor`. The dashboard groups timed pickups into 10-floor bands and compares each band's win rate with the overall counted-run baseline. Abandoned runs and untimed legacy cards are excluded from that calculation.
 
-The default Vite base is `/spire2-run-tracker/`. Set `VITE_BASE=/` for root or custom-domain deployments.
+The default Vite base is `/Slay-the-Spire-2-Strategy-Maker/`, matching the GitHub Pages repository path. Set `VITE_BASE=/` for root or custom-domain deployments.
