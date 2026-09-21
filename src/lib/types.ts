@@ -4,6 +4,7 @@ export const OUTCOMES = ['win', 'loss', 'abandoned'] as const
 export type Outcome = (typeof OUTCOMES)[number]
 
 export interface Pickup { name: string; floor?: number; upgraded?: boolean; effects?: string[] }
+export interface RelicChange { floor: number; gained: string[]; removed: string[]; context?: string }
 
 export interface Run {
   id: string
@@ -16,6 +17,7 @@ export interface Run {
   cards: Pickup[]
   cardEffects?: string[]
   relics: Pickup[]
+  relicChanges?: RelicChange[]
   potions?: string[]
   notes?: string
 }

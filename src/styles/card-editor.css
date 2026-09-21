@@ -93,6 +93,22 @@
   font-size: 11px;
 }
 
+.relic-cell { min-width: 210px; max-width: 320px; }
+.section-heading select { width: auto; min-width: 190px; }
+.relic-inventory { display: flex; flex-wrap: wrap; gap: 5px; }
+.relic-inventory > span { border: 1px solid #51485b; border-radius: 4px; background: #292330; padding: 3px 6px; font-size: 11px; white-space: nowrap; }
+.relic-inventory small { color: var(--muted); }
+.relic-history { margin-top: 9px; }
+.relic-history summary { width: max-content; color: var(--mint); font-size: 12px; cursor: pointer; }
+.relic-history ol { margin: 8px 0 0; padding: 0 0 0 20px; max-height: 240px; overflow: auto; }
+.relic-history li { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.relic-history li > small { display: block; color: var(--muted); margin-bottom: 3px; }
+.relic-change-items { display: flex; flex-wrap: wrap; gap: 3px 8px; font-size: 12px; }
+.relic-gained { color: var(--mint); }
+.relic-removed { color: #ec86a2; }
+.relic-change-editor { display: grid; grid-template-columns: 80px repeat(3,minmax(130px,1fr)) auto; gap: 10px; align-items: end; padding: 14px; border: 1px solid #403a48; border-radius: 7px; background: #19161f; }
+.relic-change-editor .delete { min-height: 42px; }
+
 @media (max-width: 760px) {
   .card-editor {
     grid-template-columns: 1fr;
@@ -101,4 +117,6 @@
   .card-editor .choice-picker {
     grid-column: auto;
   }
+
+  .relic-change-editor { grid-template-columns: 1fr; }
 }

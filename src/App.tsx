@@ -21,10 +21,12 @@ export default function App() {
     const current = runsRef.current
     const next = mergeRuns(current, incoming)
     const added = next.length - current.length
-    if (added) commit(next)
-    if (announce || added) {
+    const enriched = current.filter((run, index) => next[index] !== run).length
+    if (added || enriched) commit(next)
+    if (announce || added || enriched) {
       const skipped = result.skipped ? ` ${result.skipped} unreadable file${result.skipped === 1 ? '' : 's'} skipped.` : ''
-      setNotice(`${source === 'normal' ? 'Normal' : 'Modded'} history: ${added} new run${added === 1 ? '' : 's'} imported from ${result.files} file${result.files === 1 ? '' : 's'}.${skipped}`)
+      const updated = enriched ? ` ${enriched} existing run${enriched === 1 ? '' : 's'} gained relic history.` : ''
+      setNotice(`${source === 'normal' ? 'Normal' : 'Modded'} history: ${added} new run${added === 1 ? '' : 's'} imported from ${result.files} file${result.files === 1 ? '' : 's'}.${updated}${skipped}`)
     }
   }
   return <><header><div className="brand"><span className="brand-mark">Ⅱ</span><div><strong>SLAY THE SPIRE 2</strong><small>STRATEGY MAKER</small></div></div><nav>{(['dashboard','log','history'] as const).map((name) => <button className={tab === name ? 'active' : ''} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav><div className="actions"><button onClick={exportRuns}>Export</button><button onClick={() => fileRef.current?.click()}>Import</button><input ref={fileRef} hidden type="file" accept="application/json" onChange={(e) => void importRuns(e.target.files?.[0])}/></div></header>

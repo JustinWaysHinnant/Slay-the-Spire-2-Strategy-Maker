@@ -40,6 +40,23 @@ describe('Slay the Spire 2 run parser', () => {
     expect(parseSts2Run(rawRun, '1770000000.run', 'modded').id).toBe('sts2:modded:1770000000')
   })
 
+  it('records a same-floor relic exchange and keeps only the replacement in final inventory', () => {
+    const value = JSON.parse(rawRun)
+    value.players[0].relics = [{ id: 'RELIC.GREMLIN_HORN', floor_added_to_deck: 2 }]
+    value.map_point_history[0][1] = {
+      map_point_type: 'unknown',
+      rooms: [{ model_id: 'EVENT.RELIC_TRADER' }],
+      player_stats: [{
+        player_id: 1,
+        relics_removed: ['RELIC.AMETHYST_AUBERGINE'],
+        relic_choices: [{ choice: 'RELIC.GREMLIN_HORN', was_picked: true }],
+      }],
+    }
+    const run = parseSts2Run(JSON.stringify(value), '1770000000.run', 'normal')
+    expect(run.relics).toEqual([{ name: 'Gremlin Horn', floor: 2, upgraded: undefined }])
+    expect(run.relicChanges).toEqual([{ floor: 2, removed: ['Amethyst Aubergine'], gained: ['Gremlin Horn'], context: 'Relic Trader' }])
+  })
+
   it('rejects unsupported modded characters without breaking other imports', () => {
     const unknown = rawRun.replace('CHARACTER.NECROBINDER', 'CHARACTER.CUSTOM_HERO')
     expect(() => parseSts2Run(unknown, 'run.run', 'modded')).toThrow(/Unsupported character/)

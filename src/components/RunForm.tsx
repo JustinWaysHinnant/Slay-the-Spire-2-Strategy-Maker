@@ -4,6 +4,8 @@ import { CHARACTERS, type Outcome, type Pickup, type Run } from '../lib/types'
 
 interface Props { onAdd: (run: Run) => void }
 const parseNames = (text: string): Pickup[] => text.split(/\n|,/).map((name) => name.trim()).filter(Boolean).map((name) => ({ name }))
+const parseRelicNames = (text: string) => parseNames(text).map((item) => item.name)
+type RelicChangeDraft = { floor: number; gained: string; removed: string; context: string }
 
 function ChoicePicker({ label, options, value, onChange, grouped = false, wide = false }: {
   label: string
@@ -31,11 +33,15 @@ function ChoicePicker({ label, options, value, onChange, grouped = false, wide =
 export function RunForm({ onAdd }: Props) {
   const [cards, setCards] = useState<Pickup[]>([])
   const [relics, setRelics] = useState('')
+  const [relicChanges, setRelicChanges] = useState<RelicChangeDraft[]>([])
   const [potions, setPotions] = useState<string[]>([])
   const [outcome, setOutcome] = useState<Outcome>('loss')
   const today = new Date().toISOString().slice(0, 10)
   function updateCard(index: number, patch: Partial<Pickup>) {
     setCards(cards.map((card, cardIndex) => cardIndex === index ? { ...card, ...patch } : card))
+  }
+  function updateRelicChange(index: number, patch: Partial<RelicChangeDraft>) {
+    setRelicChanges(relicChanges.map((change, changeIndex) => changeIndex === index ? { ...change, ...patch } : change))
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -43,9 +49,12 @@ export function RunForm({ onAdd }: Props) {
     onAdd({
       id: crypto.randomUUID(), date: String(data.get('date')), character: String(data.get('character')) as Run['character'],
       ascension: Number(data.get('ascension')), outcome, floor: Number(data.get('floor')), killedBy: String(data.get('killedBy') ?? '').trim() || undefined,
-      cards: cards.map((card) => ({ ...card, name: card.name.trim(), effects: card.effects?.length ? card.effects : undefined })), relics: parseNames(relics), potions, notes: String(data.get('notes') ?? '').trim() || undefined,
+      cards: cards.map((card) => ({ ...card, name: card.name.trim(), effects: card.effects?.length ? card.effects : undefined })),
+      relics: parseNames(relics),
+      relicChanges: relicChanges.map((change) => ({ floor: change.floor, gained: parseRelicNames(change.gained), removed: parseRelicNames(change.removed), context: change.context.trim() || undefined })).filter((change) => change.gained.length || change.removed.length),
+      potions, notes: String(data.get('notes') ?? '').trim() || undefined,
     })
-    event.currentTarget.reset(); setCards([]); setRelics(''); setPotions([]); setOutcome('loss')
+    event.currentTarget.reset(); setCards([]); setRelics(''); setRelicChanges([]); setPotions([]); setOutcome('loss')
   }
   return <section className="panel form-panel">
     <div className="section-heading"><div><p className="eyebrow">New record</p><h2>Log a run</h2></div><p className="hint">Add each card separately to record its floor, upgrade, and effects.</p></div>
@@ -68,7 +77,19 @@ export function RunForm({ onAdd }: Props) {
         </div>)}</div>
         <button className="secondary" type="button" onClick={() => setCards([...cards, { name: '' }])}>+ Add card</button>
       </fieldset>
-      <label className="wide">Relics<textarea value={relics} onChange={(e) => setRelics(e.target.value)} placeholder="One per line" rows={3} /></label>
+      <label className="wide">Final relics held<textarea value={relics} onChange={(e) => setRelics(e.target.value)} placeholder="One per line" rows={3} /></label>
+      <fieldset className="card-builder wide">
+        <legend>Relic changes</legend>
+        <p className="picker-empty">Record a pickup, removal, or exchange. For an exchange, fill both Removed and Gained on the same floor.</p>
+        <div className="card-editor-list">{relicChanges.map((change, index) => <div className="relic-change-editor" key={index}>
+          <label>Floor<input type="number" min="1" value={change.floor} onChange={(event) => updateRelicChange(index, { floor: Number(event.target.value) })} required /></label>
+          <label>Removed<input value={change.removed} onChange={(event) => updateRelicChange(index, { removed: event.target.value })} placeholder="Old relic" /></label>
+          <label>Gained<input value={change.gained} onChange={(event) => updateRelicChange(index, { gained: event.target.value })} placeholder="New relic" /></label>
+          <label>Decision / event<input value={change.context} onChange={(event) => updateRelicChange(index, { context: event.target.value })} placeholder="Relic Trader" /></label>
+          <button className="delete" type="button" onClick={() => setRelicChanges(relicChanges.filter((_, changeIndex) => changeIndex !== index))}>Remove change</button>
+        </div>)}</div>
+        <button className="secondary" type="button" onClick={() => setRelicChanges([...relicChanges, { floor: 1, gained: '', removed: '', context: '' }])}>+ Add relic change</button>
+      </fieldset>
       <ChoicePicker label="Potions" options={POTIONS} value={potions} onChange={setPotions} wide />
       <label className="wide">Notes<textarea name="notes" placeholder="What changed the run?" rows={3} /></label>
       <button className="primary" type="submit">Save run</button>

@@ -15,4 +15,14 @@ describe('archives', () => {
   })
   it('rejects malformed archives', () => expect(() => parseArchive('{"version":1,"runs":[{}]}')).toThrow())
   it('keeps existing ids during merge', () => expect(mergeRuns([sample],[{...sample, outcome:'loss'}])[0].outcome).toBe('win'))
+  it('enriches an existing run with relic history without duplicating or replacing its other fields', () => {
+    const change = { floor: 12, removed: ['Old Relic'], gained: ['New Relic'], context: 'Relic Trader' }
+    const merged = mergeRuns([sample], [{ ...sample, outcome: 'loss', relicChanges: [change] }])
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({ outcome: 'win', relicChanges: [change] })
+    expect(parseArchive(JSON.stringify(toArchive(merged)))).toEqual(merged)
+  })
+  it('rejects invalid relic change records', () => {
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, relicChanges: [{ floor: 2, gained: [42], removed: [] }] }] }))).toThrow()
+  })
 })

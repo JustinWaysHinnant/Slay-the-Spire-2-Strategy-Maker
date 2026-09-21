@@ -1,4 +1,4 @@
-import { CHARACTERS, type Character, type Pickup, type Run } from './types'
+import { CHARACTERS, type Character, type Pickup, type RelicChange, type Run } from './types'
 
 export type RunSource = 'normal' | 'modded'
 
@@ -70,6 +70,37 @@ function mapPoints(value: unknown) {
   return value.flatMap((act) => Array.isArray(act) ? act.filter(isObject) : isObject(act) ? [act] : [])
 }
 
+function relicNames(value: unknown) {
+  const ids = Array.isArray(value) ? value : value === undefined ? [] : [value]
+  return ids.map(displayName).filter(Boolean)
+}
+
+function relicChangeHistory(points: JsonObject[], player: JsonObject, finalRelics: Pickup[]): RelicChange[] {
+  const changes: RelicChange[] = []
+  for (const [index, point] of points.entries()) {
+    const stats = objects(point.player_stats).find((item) => item.player_id === player.id) ?? objects(point.player_stats)[0]
+    if (!stats) continue
+    const picked = objects(stats.relic_choices)
+      .filter((choice) => choice.was_picked === true)
+      .map((choice) => displayName(choice.choice))
+      .filter(Boolean)
+    const gained = [...new Set([...picked, ...relicNames(stats.bought_relics)])]
+    const removed = [...new Set(relicNames(stats.relics_removed))]
+    if (!gained.length && !removed.length) continue
+    const room = objects(point.rooms)[0]
+    const context = displayName(room?.model_id) || displayName(point.map_point_type) || undefined
+    changes.push({ floor: index + 1, gained, removed, context })
+  }
+
+  // Starter and automatic rewards can be absent from choice events. Keep them visible
+  // without inventing an acquisition decision or exchange.
+  for (const relic of finalRelics) {
+    if (!relic.floor || changes.some((change) => change.floor === relic.floor && change.gained.includes(relic.name))) continue
+    changes.push({ floor: relic.floor, gained: [relic.name], removed: [], context: 'Recorded in final inventory' })
+  }
+  return changes.sort((a, b) => a.floor - b.floor)
+}
+
 function potionHistory(points: JsonObject[], playerId: unknown, finalPotions: unknown) {
   const collected = new Set<string>()
   for (const point of points) {
@@ -99,6 +130,7 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource):
   if (!Number.isInteger(ascension) || ascension < 0) throw new Error('Run file has an invalid ascension level.')
 
   const killedBy = displayName(value.killed_by_encounter) || displayName(value.killed_by_event) || undefined
+  const relics = pickups(player.relics)
   return {
     id: `sts2:${source}:${fileName.replace(/\.run$/i, '')}`,
     date: localDate(timestamp),
@@ -108,7 +140,8 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource):
     floor: points.length,
     killedBy,
     cards: pickups(player.deck),
-    relics: pickups(player.relics),
+    relics,
+    relicChanges: relicChangeHistory(points, player, relics),
     potions: potionHistory(points, player.id, player.potions),
     notes: `Imported from ${source} run history.`,
   }
