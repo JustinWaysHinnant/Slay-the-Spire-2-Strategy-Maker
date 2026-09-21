@@ -40,6 +40,23 @@ describe('Slay the Spire 2 run parser', () => {
     expect(parseSts2Run(rawRun, '1770000000.run', 'modded').id).toBe('sts2:modded:1770000000')
   })
 
+  it('keeps cards removed or transformed during the run in signal history', () => {
+    const value = JSON.parse(rawRun)
+    value.players[0].deck = [{ id: 'CARD.WISP', floor_added_to_deck: 3 }]
+    value.map_point_history[0][1].player_stats[0] = {
+      player_id: 1,
+      cards_gained: [{ id: 'CARD.BLOOD_WALL' }],
+      cards_removed: [{ id: 'CARD.STRIKE_NECROBINDER', floor_added_to_deck: 1 }],
+      cards_transformed: [{ original_card: { id: 'CARD.BYRDONIS_EGG' }, final_card: { id: 'CARD.BYRD_SWOOP' } }],
+      card_choices: [{ card: { id: 'CARD.DARKNESS' }, was_picked: true }, { card: { id: 'CARD.DEFY' }, was_picked: false }],
+    }
+    const run = parseSts2Run(JSON.stringify(value), '1770000000.run', 'normal')
+    expect(run.cards.map((card) => card.name)).toEqual(['Wisp'])
+    expect(run.cardsEverOwned).toEqual(expect.arrayContaining(['Wisp', 'Blood Wall', 'Strike', 'Byrdonis Egg', 'Byrd Swoop', 'Darkness']))
+    expect(run.cardsEverOwned).not.toContain('Defy')
+    expect(run.cardsRemovedDuringRun).toEqual(['Strike', 'Byrdonis Egg'])
+  })
+
   it('records a same-floor relic exchange and keeps only the replacement in final inventory', () => {
     const value = JSON.parse(rawRun)
     value.players[0].relics = [{ id: 'RELIC.GREMLIN_HORN', floor_added_to_deck: 2 }]

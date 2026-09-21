@@ -25,4 +25,15 @@ describe('archives', () => {
   it('rejects invalid relic change records', () => {
     expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, relicChanges: [{ floor: 2, gained: [42], removed: [] }] }] }))).toThrow()
   })
+  it('enriches existing imported runs with removed-card history', () => {
+    const merged = mergeRuns([sample], [{ ...sample, cardsEverOwned: ['Dagger', 'Removed Card'], cardsRemovedDuringRun: ['Removed Card'] }])
+    expect(merged).toHaveLength(1)
+    expect(merged[0].cardsEverOwned).toEqual(['Dagger', 'Removed Card'])
+    expect(merged[0].cardsRemovedDuringRun).toEqual(['Removed Card'])
+    expect(parseArchive(JSON.stringify(toArchive(merged)))).toEqual(merged)
+  })
+  it('rejects malformed card-history lists', () => {
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, cardsEverOwned: ['Dagger', 42] }] }))).toThrow()
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, cardsRemovedDuringRun: [42] }] }))).toThrow()
+  })
 })

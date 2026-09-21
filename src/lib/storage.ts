@@ -7,7 +7,7 @@ const isRelicChange = (value: unknown): value is RelicChange => typeof value ===
 export const isRun = (value: unknown): value is Run => {
   if (typeof value !== 'object' || value === null) return false
   const run = value as Run
-  return typeof run.id === 'string' && typeof run.date === 'string' && CHARACTERS.includes(run.character) && Number.isInteger(run.ascension) && run.ascension >= 0 && OUTCOMES.includes(run.outcome) && Number.isInteger(run.floor) && run.floor >= 0 && Array.isArray(run.cards) && run.cards.every(isPickup) && isOptionalStringArray(run.cardEffects) && Array.isArray(run.relics) && run.relics.every(isPickup) && (run.relicChanges === undefined || (Array.isArray(run.relicChanges) && run.relicChanges.every(isRelicChange))) && isOptionalStringArray(run.potions)
+  return typeof run.id === 'string' && typeof run.date === 'string' && CHARACTERS.includes(run.character) && Number.isInteger(run.ascension) && run.ascension >= 0 && OUTCOMES.includes(run.outcome) && Number.isInteger(run.floor) && run.floor >= 0 && Array.isArray(run.cards) && run.cards.every(isPickup) && isOptionalStringArray(run.cardsEverOwned) && isOptionalStringArray(run.cardsRemovedDuringRun) && isOptionalStringArray(run.cardEffects) && Array.isArray(run.relics) && run.relics.every(isPickup) && (run.relicChanges === undefined || (Array.isArray(run.relicChanges) && run.relicChanges.every(isRelicChange))) && isOptionalStringArray(run.potions)
 }
 export function loadRuns(): Run[] { try { const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'); return Array.isArray(value) ? value.filter(isRun) : [] } catch { return [] } }
 export function saveRuns(runs: Run[]) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(runs)); return true } catch { return false } }
@@ -19,8 +19,12 @@ export function mergeRuns(existing: Run[], incoming: Run[]) {
   return [
     ...existing.map((run) => {
       const update = byId.get(run.id)
-      return update && run.relicChanges === undefined && update.relicChanges !== undefined
-        ? { ...run, relicChanges: update.relicChanges }
+      if (!update) return run
+      const relicChanges = run.relicChanges === undefined ? update.relicChanges : undefined
+      const cardsEverOwned = run.cardsEverOwned === undefined ? update.cardsEverOwned : undefined
+      const cardsRemovedDuringRun = run.cardsRemovedDuringRun === undefined ? update.cardsRemovedDuringRun : undefined
+      return relicChanges !== undefined || cardsEverOwned !== undefined || cardsRemovedDuringRun !== undefined
+        ? { ...run, ...(relicChanges !== undefined ? { relicChanges } : {}), ...(cardsEverOwned !== undefined ? { cardsEverOwned } : {}), ...(cardsRemovedDuringRun !== undefined ? { cardsRemovedDuringRun } : {}) }
         : run
     }),
     ...incoming.filter((run) => !ids.has(run.id)),

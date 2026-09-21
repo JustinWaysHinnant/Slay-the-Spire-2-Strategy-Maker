@@ -15,6 +15,8 @@ export interface Run {
   floor: number
   killedBy?: string
   cards: Pickup[]
+  cardsEverOwned?: string[]
+  cardsRemovedDuringRun?: string[]
   cardEffects?: string[]
   relics: Pickup[]
   relicChanges?: RelicChange[]
@@ -23,6 +25,6 @@ export interface Run {
 }
 
 export interface WinRate { wins: number; losses: number; total: number; rate: number }
-export interface PickupStat { name: string; runs: number; wins: number; rate: number; lift: number }
+export interface PickupStat { name: string; runs: number; wins: number; rate: number; lift: number; removedRuns?: number; removalTrackedRuns?: number }
 export interface TimingStat { band: string; startFloor: number; pickups: number; wins: number; rate: number; lift: number }
 export interface RunArchive { version: 1; exportedAt: string; runs: Run[] }

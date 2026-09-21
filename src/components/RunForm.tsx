@@ -32,6 +32,7 @@ function ChoicePicker({ label, options, value, onChange, grouped = false, wide =
 
 export function RunForm({ onAdd }: Props) {
   const [cards, setCards] = useState<Pickup[]>([])
+  const [removedCards, setRemovedCards] = useState('')
   const [relics, setRelics] = useState('')
   const [relicChanges, setRelicChanges] = useState<RelicChangeDraft[]>([])
   const [potions, setPotions] = useState<string[]>([])
@@ -50,11 +51,13 @@ export function RunForm({ onAdd }: Props) {
       id: crypto.randomUUID(), date: String(data.get('date')), character: String(data.get('character')) as Run['character'],
       ascension: Number(data.get('ascension')), outcome, floor: Number(data.get('floor')), killedBy: String(data.get('killedBy') ?? '').trim() || undefined,
       cards: cards.map((card) => ({ ...card, name: card.name.trim(), effects: card.effects?.length ? card.effects : undefined })),
+      cardsEverOwned: [...new Set([...cards.map((card) => card.name.trim()).filter(Boolean), ...parseRelicNames(removedCards)])],
+      cardsRemovedDuringRun: [...new Set(parseRelicNames(removedCards))],
       relics: parseNames(relics),
       relicChanges: relicChanges.map((change) => ({ floor: change.floor, gained: parseRelicNames(change.gained), removed: parseRelicNames(change.removed), context: change.context.trim() || undefined })).filter((change) => change.gained.length || change.removed.length),
       potions, notes: String(data.get('notes') ?? '').trim() || undefined,
     })
-    event.currentTarget.reset(); setCards([]); setRelics(''); setRelicChanges([]); setPotions([]); setOutcome('loss')
+    event.currentTarget.reset(); setCards([]); setRemovedCards(''); setRelics(''); setRelicChanges([]); setPotions([]); setOutcome('loss')
   }
   return <section className="panel form-panel">
     <div className="section-heading"><div><p className="eyebrow">New record</p><h2>Log a run</h2></div><p className="hint">Add each card separately to record its floor, upgrade, and effects.</p></div>
@@ -66,7 +69,7 @@ export function RunForm({ onAdd }: Props) {
       <label>Final floor<input name="floor" type="number" min="0" defaultValue="1" required /></label>
       <label>Defeated by<input name="killedBy" disabled={outcome !== 'loss'} placeholder="Enemy or boss" /></label>
       <fieldset className="card-builder wide">
-        <legend>Cards</legend>
+        <legend>Cards held at run end</legend>
         {cards.length === 0 && <p className="picker-empty">No cards added yet.</p>}
         <div className="card-editor-list">{cards.map((card, index) => <div className="card-editor" key={index}>
           <label>Card name<input value={card.name} onChange={(event) => updateCard(index, { name: event.target.value })} placeholder="Pommel Strike" required /></label>
@@ -77,6 +80,7 @@ export function RunForm({ onAdd }: Props) {
         </div>)}</div>
         <button className="secondary" type="button" onClick={() => setCards([...cards, { name: '' }])}>+ Add card</button>
       </fieldset>
+      <label className="wide">Cards removed during run<textarea value={removedCards} onChange={(event) => setRemovedCards(event.target.value)} placeholder="One per line · included in Card signals" rows={2} /></label>
       <label className="wide">Final relics held<textarea value={relics} onChange={(e) => setRelics(e.target.value)} placeholder="One per line" rows={3} /></label>
       <fieldset className="card-builder wide">
         <legend>Relic changes</legend>

@@ -19,11 +19,16 @@ export function winRateByAscension(runs: Run[]): Record<number, WinRate> {
 
 export function pickupStats(runs: Run[], kind: 'cards' | 'relics', minRuns = 3): PickupStat[] {
   const baseline = winRate(runs).rate
-  const names = new Set(runs.flatMap((run) => run[kind].map((pickup) => pickup.name.trim()).filter(Boolean)))
+  const namesForRun = (run: Run) => kind === 'cards' && run.cardsEverOwned !== undefined
+    ? run.cardsEverOwned.map((name) => name.trim()).filter(Boolean)
+    : run[kind].map((pickup) => pickup.name.trim()).filter(Boolean)
+  const names = new Set(runs.flatMap(namesForRun))
   return [...names].map((name) => {
-    const matching = runs.filter((run) => isCounted(run) && new Set(run[kind].map((pickup) => pickup.name.trim())).has(name))
+    const matching = runs.filter((run) => isCounted(run) && new Set(namesForRun(run)).has(name))
     const stat = winRate(matching)
-    return { name, runs: stat.total, wins: stat.wins, rate: stat.rate, lift: (stat.rate - baseline) * 100 }
+    const removedRuns = kind === 'cards' ? matching.filter((run) => run.cardsRemovedDuringRun?.includes(name)).length : undefined
+    const removalTrackedRuns = kind === 'cards' ? matching.filter((run) => run.cardsRemovedDuringRun !== undefined).length : undefined
+    return { name, runs: stat.total, wins: stat.wins, rate: stat.rate, lift: (stat.rate - baseline) * 100, ...(removedRuns !== undefined ? { removedRuns, removalTrackedRuns } : {}) }
   }).filter((stat) => stat.runs >= minRuns).sort((a, b) => b.lift - a.lift || b.runs - a.runs || a.name.localeCompare(b.name))
 }
 

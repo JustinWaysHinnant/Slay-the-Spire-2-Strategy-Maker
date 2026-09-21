@@ -15,6 +15,14 @@ describe('pickupStats', () => {
   it('filters small samples', () => expect(pickupStats([run('win',{cards:[{name:'Zap'}]})], 'cards')).toEqual([]))
   it('reports lift in percentage points', () => { const result = pickupStats([run('win',{cards:[{name:'Zap'}]}),run('loss'),run('loss')], 'cards', 1); expect(result[0].lift).toBeCloseTo(66.667, 2) })
   it('sorts by lift descending', () => { const runs=[run('win',{cards:[{name:'Good'}]}),run('loss',{cards:[{name:'Bad'}]})]; expect(pickupStats(runs,'cards',1).map(x=>x.name)).toEqual(['Good','Bad']) })
+  it('counts cards ever owned even if absent from the final deck', () => {
+    const runs = [run('win', { cards: [{ name: 'Final' }], cardsEverOwned: ['Final', 'Removed', 'Removed'], cardsRemovedDuringRun: ['Removed'] }), run('loss')]
+    const result = pickupStats(runs, 'cards', 1)
+    expect(result.find((card) => card.name === 'Removed')).toMatchObject({ runs: 1, wins: 1, rate: 1, removedRuns: 1, removalTrackedRuns: 1 })
+  })
+  it('falls back to final cards for older runs without card history', () => {
+    expect(pickupStats([run('win', { cards: [{ name: 'Legacy' }] })], 'cards', 1)[0].name).toBe('Legacy')
+  })
 })
 describe('cardTimingStats', () => {
   it('buckets floor boundaries', () => { const result=cardTimingStats([run('win',{cards:[{name:'A',floor:1},{name:'B',floor:10},{name:'C',floor:11}]})],10,1); expect(result.map(x=>x.band)).toEqual(['1–10','11–20']) })

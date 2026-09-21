@@ -70,6 +70,30 @@ function mapPoints(value: unknown) {
   return value.flatMap((act) => Array.isArray(act) ? act.filter(isObject) : isObject(act) ? [act] : [])
 }
 
+function cardHistory(points: JsonObject[], player: JsonObject, finalCards: Pickup[]) {
+  const names = new Set(finalCards.map((card) => card.name).filter(Boolean))
+  const removed = new Set<string>()
+  const addCard = (value: unknown, wasRemoved = false) => {
+    const name = displayName(isObject(value) ? value.id : value)
+    if (name) {
+      names.add(name)
+      if (wasRemoved) removed.add(name)
+    }
+  }
+  for (const point of points) {
+    const stats = objects(point.player_stats).find((item) => item.player_id === player.id) ?? objects(point.player_stats)[0]
+    if (!stats) continue
+    for (const card of Array.isArray(stats.cards_gained) ? stats.cards_gained : []) addCard(card)
+    for (const card of Array.isArray(stats.cards_removed) ? stats.cards_removed : []) addCard(card, true)
+    for (const choice of objects(stats.card_choices)) if (choice.was_picked === true) addCard(choice.card)
+    for (const transformation of objects(stats.cards_transformed)) {
+      addCard(transformation.original_card, true)
+      addCard(transformation.final_card)
+    }
+  }
+  return { everOwned: [...names], removed: [...removed] }
+}
+
 function relicNames(value: unknown) {
   const ids = Array.isArray(value) ? value : value === undefined ? [] : [value]
   return ids.map(displayName).filter(Boolean)
@@ -130,6 +154,8 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource):
   if (!Number.isInteger(ascension) || ascension < 0) throw new Error('Run file has an invalid ascension level.')
 
   const killedBy = displayName(value.killed_by_encounter) || displayName(value.killed_by_event) || undefined
+  const cards = pickups(player.deck)
+  const cardEvents = cardHistory(points, player, cards)
   const relics = pickups(player.relics)
   return {
     id: `sts2:${source}:${fileName.replace(/\.run$/i, '')}`,
@@ -139,7 +165,9 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource):
     outcome: value.was_abandoned === true ? 'abandoned' : value.win === true ? 'win' : 'loss',
     floor: points.length,
     killedBy,
-    cards: pickups(player.deck),
+    cards,
+    cardsEverOwned: cardEvents.everOwned,
+    cardsRemovedDuringRun: cardEvents.removed,
     relics,
     relicChanges: relicChangeHistory(points, player, relics),
     potions: potionHistory(points, player.id, player.potions),

@@ -25,7 +25,7 @@ export default function App() {
     if (added || enriched) commit(next)
     if (announce || added || enriched) {
       const skipped = result.skipped ? ` ${result.skipped} unreadable file${result.skipped === 1 ? '' : 's'} skipped.` : ''
-      const updated = enriched ? ` ${enriched} existing run${enriched === 1 ? '' : 's'} gained relic history.` : ''
+      const updated = enriched ? ` ${enriched} existing run${enriched === 1 ? '' : 's'} gained new history details.` : ''
       setNotice(`${source === 'normal' ? 'Normal' : 'Modded'} history: ${added} new run${added === 1 ? '' : 's'} imported from ${result.files} file${result.files === 1 ? '' : 's'}.${updated}${skipped}`)
     }
   }
