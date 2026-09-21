@@ -49,4 +49,13 @@ describe('archives', () => {
     expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, cardChanges: [{ floor: 2, gained: [], removed: [], transformed: [{ from: 'A' }], upgraded: [] }] }] }))).toThrow()
     expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, potionChanges: [{ floor: 2, gained: [], used: [42], discarded: [] }] }] }))).toThrow()
   })
+  it('enriches older imported runs with mode without replacing their data', () => {
+    const merged = mergeRuns([sample], [{ ...sample, mode: 'multiplayer', playerCount: 3, outcome: 'loss' }])
+    expect(merged[0]).toMatchObject({ mode: 'multiplayer', playerCount: 3, outcome: 'win' })
+    expect(parseArchive(JSON.stringify(toArchive(merged)))).toEqual(merged)
+  })
+  it('rejects inconsistent run-type metadata', () => {
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, mode: 'multiplayer', playerCount: 1 }] }))).toThrow()
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, mode: 'singleplayer', playerCount: 2 }] }))).toThrow()
+  })
 })

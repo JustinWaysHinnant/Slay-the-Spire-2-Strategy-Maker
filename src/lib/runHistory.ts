@@ -199,7 +199,8 @@ function potionHistory(points: JsonObject[], playerId: unknown, finalPotions: un
 export function parseSts2Run(text: string, fileName: string, source: RunSource): Run {
   const value: unknown = JSON.parse(text)
   if (!isObject(value)) throw new Error('Run file is not a JSON object.')
-  const player = objects(value.players)[0]
+  const players = objects(value.players)
+  const player = players[0]
   if (!player) throw new Error('Run file has no player data.')
   const timestamp = Number(value.start_time ?? fileName.replace(/\.run$/i, ''))
   const points = mapPoints(value.map_point_history)
@@ -217,6 +218,8 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource):
     ascension,
     outcome: value.was_abandoned === true ? 'abandoned' : value.win === true ? 'win' : 'loss',
     floor: points.length,
+    mode: players.length > 1 ? 'multiplayer' : 'singleplayer',
+    playerCount: players.length,
     killedBy,
     cards,
     cardsEverOwned: cardEvents.everOwned,

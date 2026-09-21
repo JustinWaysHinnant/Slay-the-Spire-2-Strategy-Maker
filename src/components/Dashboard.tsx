@@ -1,12 +1,29 @@
+import { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { bestCharacter, cardTimingStats, formatRate, pickupStats, winRate, winRateByCharacter, winRateTrend } from '../lib/stats'
 import type { Run } from '../lib/types'
 
+type ModeView = 'singleplayer' | 'multiplayer' | 'unclassified'
+
 export function Dashboard({ runs }: { runs: Run[] }) {
+  const [mode, setMode] = useState<ModeView>('singleplayer')
+  const filtered = runs.filter((run) => (run.mode ?? 'unclassified') === mode)
+  return <div className="dashboard">
+    <section className="mode-filter panel" aria-label="Dashboard run mode">
+      <div><strong>Run type</strong><small>Dashboard statistics are calculated only from the selected group.</small></div>
+      <div className="mode-options">{(['singleplayer', 'multiplayer', 'unclassified'] as const).map((option) => <button type="button" key={option} aria-pressed={mode === option} onClick={() => setMode(option)}>{option === 'singleplayer' ? 'Singleplayer' : option === 'multiplayer' ? 'Multiplayer' : 'Unclassified'} <span>{runs.filter((run) => (run.mode ?? 'unclassified') === option).length}</span></button>)}</div>
+    </section>
+    {mode === 'multiplayer' && filtered.length > 0 ? <p className="mode-caveat">Co-op imports currently show the first player recorded in the run file. Their cards, relics, and potions may not be yours.</p> : null}
+    {mode === 'unclassified' && filtered.length > 0 ? <p className="mode-caveat">These older records have no run-type label. Re-import their history files, or log new runs with a run type, to separate them.</p> : null}
+    <DashboardContent runs={filtered} mode={mode} />
+  </div>
+}
+
+function DashboardContent({ runs, mode }: { runs: Run[]; mode: ModeView }) {
   const overall = winRate(runs), best = bestCharacter(runs), characters = Object.entries(winRateByCharacter(runs)).map(([name, stat]) => ({ name, rate: Math.round((stat?.rate ?? 0) * 100), runs: stat?.total ?? 0 }))
   const cards = pickupStats(runs, 'cards', 3).slice(0, 8), timing = cardTimingStats(runs, 10, 3).map((item) => ({ ...item, ratePercent: Math.round(item.rate * 100) })), trend = winRateTrend(runs, 10).map((item) => ({ ...item, ratePercent: Math.round(item.rate * 100) }))
-  if (!runs.length) return <section className="empty"><span>0</span><h2>Your first run starts the story.</h2><p>Log a run, then return here as your patterns emerge.</p></section>
-  return <div className="dashboard">
+  if (!runs.length) return <section className="empty"><span>0</span><h2>No {mode === 'singleplayer' ? 'singleplayer' : mode === 'multiplayer' ? 'multiplayer' : 'unclassified'} runs yet.</h2><p>{mode === 'unclassified' ? 'Older runs without a run type appear here.' : 'Import run history or log a run to fill this view.'}</p></section>
+  return <div>
     <section className="stat-grid">
       <article className="stat"><span>Tracked runs</span><strong>{runs.length}</strong><small>{overall.total} counted</small></article>
       <article className="stat"><span>Win rate</span><strong>{formatRate(overall.rate)}</strong><small>{overall.wins}W / {overall.losses}L</small></article>

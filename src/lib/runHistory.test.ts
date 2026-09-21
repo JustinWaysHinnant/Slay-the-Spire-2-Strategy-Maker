@@ -34,11 +34,21 @@ describe('Slay the Spire 2 run parser', () => {
       relics: [{ name: 'Bone Tea', floor: 5 }],
       potions: ['Weak Potion'],
       finalPotions: [],
+      mode: 'singleplayer',
+      playerCount: 1,
     })
   })
 
   it('keeps normal and modded imports distinct', () => {
     expect(parseSts2Run(rawRun, '1770000000.run', 'modded').id).toBe('sts2:modded:1770000000')
+  })
+
+  it('classifies co-op from player count rather than game_mode', () => {
+    const value = JSON.parse(rawRun)
+    value.game_mode = 'standard'
+    value.players.push({ ...value.players[0], id: 2, character: 'CHARACTER.SILENT' })
+    const run = parseSts2Run(JSON.stringify(value), '1770000000.run', 'normal')
+    expect(run).toMatchObject({ mode: 'multiplayer', playerCount: 2, character: 'Necrobinder' })
   })
 
   it('keeps cards removed or transformed during the run in signal history', () => {

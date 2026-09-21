@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { CARD_EFFECT_GROUPS, POTIONS } from '../lib/gameData'
-import { CHARACTERS, type Outcome, type Pickup, type Run } from '../lib/types'
+import { CHARACTERS, type Outcome, type Pickup, type Run, type RunMode } from '../lib/types'
 
 interface Props { onAdd: (run: Run) => void }
 const parseNames = (text: string): Pickup[] => text.split(/\n|,/).map((name) => name.trim()).filter(Boolean).map((name) => ({ name }))
@@ -42,6 +42,7 @@ export function RunForm({ onAdd }: Props) {
   const [potionChanges, setPotionChanges] = useState<PotionChangeDraft[]>([])
   const [potions, setPotions] = useState<string[]>([])
   const [outcome, setOutcome] = useState<Outcome>('loss')
+  const [mode, setMode] = useState<RunMode>('singleplayer')
   const today = new Date().toISOString().slice(0, 10)
   function updateCard(index: number, patch: Partial<Pickup>) {
     setCards(cards.map((card, cardIndex) => cardIndex === index ? { ...card, ...patch } : card))
@@ -61,6 +62,7 @@ export function RunForm({ onAdd }: Props) {
     onAdd({
       id: crypto.randomUUID(), date: String(data.get('date')), character: String(data.get('character')) as Run['character'],
       ascension: Number(data.get('ascension')), outcome, floor: Number(data.get('floor')), killedBy: String(data.get('killedBy') ?? '').trim() || undefined,
+      mode, playerCount: mode === 'singleplayer' ? 1 : Number(data.get('playerCount')),
       cards: cards.map((card) => ({ ...card, name: card.name.trim(), effects: card.effects?.length ? card.effects : undefined })),
       cardsEverOwned: [...new Set([...cards.map((card) => card.name.trim()).filter(Boolean), ...parseRelicNames(removedCards), ...cardChanges.flatMap((change) => [...parseRelicNames(change.gained), ...parseRelicNames(change.removed), ...parseRelicNames(change.transformedFrom), ...parseRelicNames(change.transformedTo)])])],
       cardsRemovedDuringRun: [...new Set([...parseRelicNames(removedCards), ...cardChanges.flatMap((change) => [...parseRelicNames(change.removed), ...parseRelicNames(change.transformedFrom)])])],
@@ -71,13 +73,15 @@ export function RunForm({ onAdd }: Props) {
       potionChanges: potionChanges.map((change) => ({ floor: change.floor, gained: parseRelicNames(change.gained), used: parseRelicNames(change.used), discarded: parseRelicNames(change.discarded), context: change.context.trim() || undefined })).filter((change) => change.gained.length || change.used.length || change.discarded.length),
       notes: String(data.get('notes') ?? '').trim() || undefined,
     })
-    event.currentTarget.reset(); setCards([]); setRemovedCards(''); setRelics(''); setRelicChanges([]); setCardChanges([]); setPotionChanges([]); setPotions([]); setOutcome('loss')
+    event.currentTarget.reset(); setCards([]); setRemovedCards(''); setRelics(''); setRelicChanges([]); setCardChanges([]); setPotionChanges([]); setPotions([]); setOutcome('loss'); setMode('singleplayer')
   }
   return <section className="panel form-panel">
     <div className="section-heading"><div><p className="eyebrow">New record</p><h2>Log a run</h2></div><p className="hint">Add each card separately to record its floor, upgrade, and effects.</p></div>
     <form onSubmit={submit} className="run-form">
       <label>Date<input name="date" type="date" defaultValue={today} required /></label>
       <label>Character<select name="character">{CHARACTERS.map((name) => <option key={name}>{name}</option>)}</select></label>
+      <label>Run type<select value={mode} onChange={(event) => setMode(event.target.value as RunMode)}><option value="singleplayer">Singleplayer</option><option value="multiplayer">Multiplayer</option></select></label>
+      {mode === 'multiplayer' ? <label>Players<input name="playerCount" type="number" min="2" defaultValue="2" required /></label> : null}
       <label>Ascension<input name="ascension" type="number" min="0" max="20" defaultValue="0" required /></label>
       <label>Outcome<select name="outcome" value={outcome} onChange={(e) => setOutcome(e.target.value as Outcome)}>{(['win', 'loss', 'abandoned'] as const).map((value) => <option key={value}>{value}</option>)}</select></label>
       <label>Final floor<input name="floor" type="number" min="0" defaultValue="1" required /></label>

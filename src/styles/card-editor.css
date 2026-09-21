@@ -115,6 +115,21 @@
 .history-change-editor label { flex: 1 1 150px; }
 .history-change-editor label:first-child { flex: 0 0 80px; }
 .history-change-editor .delete { min-height: 42px; }
+.mode-filter { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 20px; margin-bottom: 16px; }
+.mode-filter strong, .mode-filter small { display: block; }
+.mode-filter strong { font: 600 17px 'Space Grotesk'; }
+.mode-filter small, .mode-caveat { color: var(--muted); font-size: 12px; }
+.mode-filter small { margin-top: 3px; }
+.mode-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.mode-options button { border: 1px solid #62596d; border-radius: 6px; background: #17151d; color: #ddd6e2; padding: 8px 10px; white-space: nowrap; }
+.mode-options button[aria-pressed="true"] { background: #25514d; border-color: var(--mint); color: #fff; }
+.mode-options span { margin-left: 4px; color: var(--mint); }
+.mode-caveat { margin: 0 0 16px; }
+.history-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.mode-badge { display: inline-block; border: 1px solid #62596d; border-radius: 99px; padding: 4px 8px; font-size: 11px; white-space: nowrap; }
+.mode-badge.multiplayer { color: #f4cc81; border-color: #947342; }
+.mode-badge.singleplayer { color: var(--mint); border-color: #34756f; }
+.mode-badge.unclassified { color: var(--muted); }
 
 @media (max-width: 760px) {
   .card-editor {
@@ -126,4 +141,6 @@
   }
 
   .relic-change-editor { grid-template-columns: 1fr; }
+  .mode-filter { align-items: stretch; flex-direction: column; }
+  .mode-options button { flex: 1; }
 }
