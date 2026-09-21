@@ -33,6 +33,7 @@ describe('Slay the Spire 2 run parser', () => {
       cards: [{ name: 'Strike', floor: 1 }, { name: 'Wisp', floor: 3, upgraded: true }],
       relics: [{ name: 'Bone Tea', floor: 5 }],
       potions: ['Weak Potion'],
+      finalPotions: [],
     })
   })
 
@@ -72,6 +73,31 @@ describe('Slay the Spire 2 run parser', () => {
     const run = parseSts2Run(JSON.stringify(value), '1770000000.run', 'normal')
     expect(run.relics).toEqual([{ name: 'Gremlin Horn', floor: 2, upgraded: undefined }])
     expect(run.relicChanges).toEqual([{ floor: 2, removed: ['Amethyst Aubergine'], gained: ['Gremlin Horn'], context: 'Relic Trader' }])
+  })
+
+  it('tracks card and potion changes separately from final inventories', () => {
+    const value = JSON.parse(rawRun)
+    value.players[0].deck = [{ id: 'CARD.WISP', floor_added_to_deck: 2, current_upgrade_level: 1 }]
+    value.players[0].potions = [{ id: 'POTION.FIRE_POTION' }, { id: 'POTION.FIRE_POTION' }]
+    value.map_point_history[0][1] = {
+      rooms: [{ model_id: 'EVENT.RELIC_TRADER' }],
+      player_stats: [{
+        player_id: 1,
+        cards_gained: [{ id: 'CARD.WISP' }],
+        card_choices: [{ card: { id: 'CARD.WISP' }, was_picked: true }],
+        cards_removed: [{ id: 'CARD.STRIKE_NECROBINDER' }],
+        cards_transformed: [{ original_card: { id: 'CARD.OLD_CARD' }, final_card: { id: 'CARD.NEW_CARD' } }],
+        upgraded_cards: ['CARD.WISP'],
+        potion_choices: [{ choice: 'POTION.FIRE_POTION', was_picked: true }],
+        potion_used: ['POTION.WEAK_POTION'],
+        potion_discarded: ['POTION.SPEED_POTION'],
+      }],
+    }
+    const run = parseSts2Run(JSON.stringify(value), '1770000000.run', 'modded')
+    expect(run.cards).toHaveLength(1)
+    expect(run.cardChanges).toContainEqual({ floor: 2, gained: ['Wisp'], removed: ['Strike'], transformed: [{ from: 'Old Card', to: 'New Card' }], upgraded: ['Wisp'], context: 'Relic Trader' })
+    expect(run.finalPotions).toEqual(['Fire Potion', 'Fire Potion'])
+    expect(run.potionChanges).toContainEqual({ floor: 2, gained: ['Fire Potion'], used: ['Weak Potion'], discarded: ['Speed Potion'], context: 'Relic Trader' })
   })
 
   it('rejects unsupported modded characters without breaking other imports', () => {

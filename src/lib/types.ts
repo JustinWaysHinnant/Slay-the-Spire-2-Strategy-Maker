@@ -5,6 +5,8 @@ export type Outcome = (typeof OUTCOMES)[number]
 
 export interface Pickup { name: string; floor?: number; upgraded?: boolean; effects?: string[] }
 export interface RelicChange { floor: number; gained: string[]; removed: string[]; context?: string }
+export interface CardChange { floor: number; gained: string[]; removed: string[]; transformed: { from: string; to: string }[]; upgraded: string[]; context?: string }
+export interface PotionChange { floor: number; gained: string[]; used: string[]; discarded: string[]; context?: string }
 
 export interface Run {
   id: string
@@ -17,10 +19,13 @@ export interface Run {
   cards: Pickup[]
   cardsEverOwned?: string[]
   cardsRemovedDuringRun?: string[]
+  cardChanges?: CardChange[]
   cardEffects?: string[]
   relics: Pickup[]
   relicChanges?: RelicChange[]
   potions?: string[]
+  finalPotions?: string[]
+  potionChanges?: PotionChange[]
   notes?: string
 }
 

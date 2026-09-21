@@ -6,17 +6,20 @@ interface Props { onAdd: (run: Run) => void }
 const parseNames = (text: string): Pickup[] => text.split(/\n|,/).map((name) => name.trim()).filter(Boolean).map((name) => ({ name }))
 const parseRelicNames = (text: string) => parseNames(text).map((item) => item.name)
 type RelicChangeDraft = { floor: number; gained: string; removed: string; context: string }
+type CardChangeDraft = RelicChangeDraft & { upgraded: string; transformedFrom: string; transformedTo: string }
+type PotionChangeDraft = { floor: number; gained: string; used: string; discarded: string; context: string }
 
-function ChoicePicker({ label, options, value, onChange, grouped = false, wide = false }: {
+function ChoicePicker({ label, options, value, onChange, grouped = false, wide = false, allowDuplicates = false }: {
   label: string
   options: readonly string[] | typeof CARD_EFFECT_GROUPS
   value: string[]
   onChange: (value: string[]) => void
   grouped?: boolean
   wide?: boolean
+  allowDuplicates?: boolean
 }) {
   function add(choice: string) {
-    if (choice && !value.includes(choice)) onChange([...value, choice])
+    if (choice && (allowDuplicates || !value.includes(choice))) onChange([...value, choice])
   }
   return <fieldset className={`choice-picker${wide ? ' wide' : ''}`}>
     <legend>{label}</legend>
@@ -26,7 +29,7 @@ function ChoicePicker({ label, options, value, onChange, grouped = false, wide =
         ? (options as typeof CARD_EFFECT_GROUPS).map((group) => <optgroup label={group.label} key={group.label}>{group.options.map((option) => <option key={option}>{option}</option>)}</optgroup>)
         : (options as readonly string[]).map((option) => <option key={option}>{option}</option>)}
     </select>
-    {value.length > 0 && <div className="choice-list">{value.map((choice) => <span className="choice" key={choice}>{choice}<button type="button" onClick={() => onChange(value.filter((item) => item !== choice))} aria-label={`Remove ${choice}`}>×</button></span>)}</div>}
+    {value.length > 0 && <div className="choice-list">{value.map((choice, index) => <span className="choice" key={`${choice}-${index}`}>{choice}<button type="button" onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${choice}`}>×</button></span>)}</div>}
   </fieldset>
 }
 
@@ -35,6 +38,8 @@ export function RunForm({ onAdd }: Props) {
   const [removedCards, setRemovedCards] = useState('')
   const [relics, setRelics] = useState('')
   const [relicChanges, setRelicChanges] = useState<RelicChangeDraft[]>([])
+  const [cardChanges, setCardChanges] = useState<CardChangeDraft[]>([])
+  const [potionChanges, setPotionChanges] = useState<PotionChangeDraft[]>([])
   const [potions, setPotions] = useState<string[]>([])
   const [outcome, setOutcome] = useState<Outcome>('loss')
   const today = new Date().toISOString().slice(0, 10)
@@ -44,6 +49,12 @@ export function RunForm({ onAdd }: Props) {
   function updateRelicChange(index: number, patch: Partial<RelicChangeDraft>) {
     setRelicChanges(relicChanges.map((change, changeIndex) => changeIndex === index ? { ...change, ...patch } : change))
   }
+  function updateCardChange(index: number, patch: Partial<CardChangeDraft>) {
+    setCardChanges(cardChanges.map((change, changeIndex) => changeIndex === index ? { ...change, ...patch } : change))
+  }
+  function updatePotionChange(index: number, patch: Partial<PotionChangeDraft>) {
+    setPotionChanges(potionChanges.map((change, changeIndex) => changeIndex === index ? { ...change, ...patch } : change))
+  }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
@@ -51,13 +62,16 @@ export function RunForm({ onAdd }: Props) {
       id: crypto.randomUUID(), date: String(data.get('date')), character: String(data.get('character')) as Run['character'],
       ascension: Number(data.get('ascension')), outcome, floor: Number(data.get('floor')), killedBy: String(data.get('killedBy') ?? '').trim() || undefined,
       cards: cards.map((card) => ({ ...card, name: card.name.trim(), effects: card.effects?.length ? card.effects : undefined })),
-      cardsEverOwned: [...new Set([...cards.map((card) => card.name.trim()).filter(Boolean), ...parseRelicNames(removedCards)])],
-      cardsRemovedDuringRun: [...new Set(parseRelicNames(removedCards))],
+      cardsEverOwned: [...new Set([...cards.map((card) => card.name.trim()).filter(Boolean), ...parseRelicNames(removedCards), ...cardChanges.flatMap((change) => [...parseRelicNames(change.gained), ...parseRelicNames(change.removed), ...parseRelicNames(change.transformedFrom), ...parseRelicNames(change.transformedTo)])])],
+      cardsRemovedDuringRun: [...new Set([...parseRelicNames(removedCards), ...cardChanges.flatMap((change) => [...parseRelicNames(change.removed), ...parseRelicNames(change.transformedFrom)])])],
+      cardChanges: cardChanges.map((change) => ({ floor: change.floor, gained: parseRelicNames(change.gained), removed: parseRelicNames(change.removed), transformed: change.transformedFrom.trim() && change.transformedTo.trim() ? [{ from: change.transformedFrom.trim(), to: change.transformedTo.trim() }] : [], upgraded: parseRelicNames(change.upgraded), context: change.context.trim() || undefined })).filter((change) => change.gained.length || change.removed.length || change.transformed.length || change.upgraded.length),
       relics: parseNames(relics),
       relicChanges: relicChanges.map((change) => ({ floor: change.floor, gained: parseRelicNames(change.gained), removed: parseRelicNames(change.removed), context: change.context.trim() || undefined })).filter((change) => change.gained.length || change.removed.length),
-      potions, notes: String(data.get('notes') ?? '').trim() || undefined,
+      potions, finalPotions: potions,
+      potionChanges: potionChanges.map((change) => ({ floor: change.floor, gained: parseRelicNames(change.gained), used: parseRelicNames(change.used), discarded: parseRelicNames(change.discarded), context: change.context.trim() || undefined })).filter((change) => change.gained.length || change.used.length || change.discarded.length),
+      notes: String(data.get('notes') ?? '').trim() || undefined,
     })
-    event.currentTarget.reset(); setCards([]); setRemovedCards(''); setRelics(''); setRelicChanges([]); setPotions([]); setOutcome('loss')
+    event.currentTarget.reset(); setCards([]); setRemovedCards(''); setRelics(''); setRelicChanges([]); setCardChanges([]); setPotionChanges([]); setPotions([]); setOutcome('loss')
   }
   return <section className="panel form-panel">
     <div className="section-heading"><div><p className="eyebrow">New record</p><h2>Log a run</h2></div><p className="hint">Add each card separately to record its floor, upgrade, and effects.</p></div>
@@ -81,6 +95,21 @@ export function RunForm({ onAdd }: Props) {
         <button className="secondary" type="button" onClick={() => setCards([...cards, { name: '' }])}>+ Add card</button>
       </fieldset>
       <label className="wide">Cards removed during run<textarea value={removedCards} onChange={(event) => setRemovedCards(event.target.value)} placeholder="One per line · included in Card signals" rows={2} /></label>
+      <fieldset className="card-builder wide">
+        <legend>Card changes</legend>
+        <p className="picker-empty">Optional floor-by-floor pickups, removals, transformations, and upgrades.</p>
+        <div className="card-editor-list">{cardChanges.map((change, index) => <div className="history-change-editor" key={index}>
+          <label>Floor<input type="number" min="1" value={change.floor} onChange={(event) => updateCardChange(index, { floor: Number(event.target.value) })} required /></label>
+          <label>Gained<input value={change.gained} onChange={(event) => updateCardChange(index, { gained: event.target.value })} placeholder="Card name" /></label>
+          <label>Removed<input value={change.removed} onChange={(event) => updateCardChange(index, { removed: event.target.value })} placeholder="Card name" /></label>
+          <label>Transformed from<input value={change.transformedFrom} onChange={(event) => updateCardChange(index, { transformedFrom: event.target.value })} placeholder="Old card" /></label>
+          <label>Transformed to<input value={change.transformedTo} onChange={(event) => updateCardChange(index, { transformedTo: event.target.value })} placeholder="New card" /></label>
+          <label>Upgraded<input value={change.upgraded} onChange={(event) => updateCardChange(index, { upgraded: event.target.value })} placeholder="Card name" /></label>
+          <label>Decision / event<input value={change.context} onChange={(event) => updateCardChange(index, { context: event.target.value })} placeholder="Event" /></label>
+          <button className="delete" type="button" onClick={() => setCardChanges(cardChanges.filter((_, changeIndex) => changeIndex !== index))}>Remove change</button>
+        </div>)}</div>
+        <button className="secondary" type="button" onClick={() => setCardChanges([...cardChanges, { floor: 1, gained: '', removed: '', transformedFrom: '', transformedTo: '', upgraded: '', context: '' }])}>+ Add card change</button>
+      </fieldset>
       <label className="wide">Final relics held<textarea value={relics} onChange={(e) => setRelics(e.target.value)} placeholder="One per line" rows={3} /></label>
       <fieldset className="card-builder wide">
         <legend>Relic changes</legend>
@@ -94,7 +123,20 @@ export function RunForm({ onAdd }: Props) {
         </div>)}</div>
         <button className="secondary" type="button" onClick={() => setRelicChanges([...relicChanges, { floor: 1, gained: '', removed: '', context: '' }])}>+ Add relic change</button>
       </fieldset>
-      <ChoicePicker label="Potions" options={POTIONS} value={potions} onChange={setPotions} wide />
+      <ChoicePicker label="Final potions held" options={POTIONS} value={potions} onChange={setPotions} wide allowDuplicates />
+      <fieldset className="card-builder wide">
+        <legend>Potion changes</legend>
+        <p className="picker-empty">Optional floor-by-floor pickups, uses, and discards.</p>
+        <div className="card-editor-list">{potionChanges.map((change, index) => <div className="history-change-editor" key={index}>
+          <label>Floor<input type="number" min="1" value={change.floor} onChange={(event) => updatePotionChange(index, { floor: Number(event.target.value) })} required /></label>
+          <label>Gained<input value={change.gained} onChange={(event) => updatePotionChange(index, { gained: event.target.value })} placeholder="Potion name" /></label>
+          <label>Used<input value={change.used} onChange={(event) => updatePotionChange(index, { used: event.target.value })} placeholder="Potion name" /></label>
+          <label>Discarded<input value={change.discarded} onChange={(event) => updatePotionChange(index, { discarded: event.target.value })} placeholder="Potion name" /></label>
+          <label>Decision / event<input value={change.context} onChange={(event) => updatePotionChange(index, { context: event.target.value })} placeholder="Event" /></label>
+          <button className="delete" type="button" onClick={() => setPotionChanges(potionChanges.filter((_, changeIndex) => changeIndex !== index))}>Remove change</button>
+        </div>)}</div>
+        <button className="secondary" type="button" onClick={() => setPotionChanges([...potionChanges, { floor: 1, gained: '', used: '', discarded: '', context: '' }])}>+ Add potion change</button>
+      </fieldset>
       <label className="wide">Notes<textarea name="notes" placeholder="What changed the run?" rows={3} /></label>
       <button className="primary" type="submit">Save run</button>
     </form>

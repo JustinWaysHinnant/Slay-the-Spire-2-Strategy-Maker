@@ -1,4 +1,4 @@
-import { CHARACTERS, type Character, type Pickup, type RelicChange, type Run } from './types'
+import { CHARACTERS, type CardChange, type Character, type Pickup, type PotionChange, type RelicChange, type Run } from './types'
 
 export type RunSource = 'normal' | 'modded'
 
@@ -70,6 +70,61 @@ function mapPoints(value: unknown) {
   return value.flatMap((act) => Array.isArray(act) ? act.filter(isObject) : isObject(act) ? [act] : [])
 }
 
+function playerStats(point: JsonObject, playerId: unknown) {
+  return objects(point.player_stats).find((item) => item.player_id === playerId) ?? objects(point.player_stats)[0]
+}
+
+function pointContext(point: JsonObject) {
+  return displayName(objects(point.rooms)[0]?.model_id) || displayName(point.map_point_type) || undefined
+}
+
+function itemNames(value: unknown) {
+  return (Array.isArray(value) ? value : []).map((item) => displayName(isObject(item) ? item.id : item)).filter(Boolean)
+}
+
+function cardChangeHistory(points: JsonObject[], player: JsonObject, finalCards: Pickup[]): CardChange[] {
+  const changes: CardChange[] = []
+  for (const [index, point] of points.entries()) {
+    const stats = playerStats(point, player.id)
+    if (!stats) continue
+    const picked = objects(stats.card_choices).filter((choice) => choice.was_picked === true)
+      .map((choice) => displayName(isObject(choice.card) ? choice.card.id : choice.card)).filter(Boolean)
+    const gained = itemNames(stats.cards_gained)
+    // Card rewards commonly appear in both fields; use the choice only if it is
+    // absent from the recorded gains, while preserving duplicate deck copies.
+    for (const name of picked) if (!gained.includes(name)) gained.push(name)
+    const removed = itemNames(stats.cards_removed)
+    const transformed = objects(stats.cards_transformed).flatMap((item) => {
+      const from = displayName(isObject(item.original_card) ? item.original_card.id : item.original_card)
+      const to = displayName(isObject(item.final_card) ? item.final_card.id : item.final_card)
+      return from && to ? [{ from, to }] : []
+    })
+    const upgraded = itemNames(stats.upgraded_cards)
+    if (gained.length || removed.length || transformed.length || upgraded.length) {
+      changes.push({ floor: index + 1, gained, removed, transformed, upgraded, context: pointContext(point) })
+    }
+  }
+  for (const card of finalCards) {
+    if (!card.floor || changes.some((change) => change.floor === card.floor && (change.gained.includes(card.name) || change.transformed.some((item) => item.to === card.name)))) continue
+    changes.push({ floor: card.floor, gained: [card.name], removed: [], transformed: [], upgraded: [], context: 'Recorded in final deck' })
+  }
+  return changes.sort((a, b) => a.floor - b.floor)
+}
+
+function potionChangeHistory(points: JsonObject[], playerId: unknown): PotionChange[] {
+  const changes: PotionChange[] = []
+  for (const [index, point] of points.entries()) {
+    const stats = playerStats(point, playerId)
+    if (!stats) continue
+    const gained = objects(stats.potion_choices).filter((choice) => choice.was_picked === true).map((choice) => displayName(choice.choice)).filter(Boolean)
+    for (const name of itemNames(stats.bought_potions)) if (!gained.includes(name)) gained.push(name)
+    const used = itemNames(stats.potion_used)
+    const discarded = itemNames(stats.potion_discarded)
+    if (gained.length || used.length || discarded.length) changes.push({ floor: index + 1, gained, used, discarded, context: pointContext(point) })
+  }
+  return changes
+}
+
 function cardHistory(points: JsonObject[], player: JsonObject, finalCards: Pickup[]) {
   const names = new Set(finalCards.map((card) => card.name).filter(Boolean))
   const removed = new Set<string>()
@@ -81,7 +136,7 @@ function cardHistory(points: JsonObject[], player: JsonObject, finalCards: Picku
     }
   }
   for (const point of points) {
-    const stats = objects(point.player_stats).find((item) => item.player_id === player.id) ?? objects(point.player_stats)[0]
+    const stats = playerStats(point, player.id)
     if (!stats) continue
     for (const card of Array.isArray(stats.cards_gained) ? stats.cards_gained : []) addCard(card)
     for (const card of Array.isArray(stats.cards_removed) ? stats.cards_removed : []) addCard(card, true)
@@ -102,7 +157,7 @@ function relicNames(value: unknown) {
 function relicChangeHistory(points: JsonObject[], player: JsonObject, finalRelics: Pickup[]): RelicChange[] {
   const changes: RelicChange[] = []
   for (const [index, point] of points.entries()) {
-    const stats = objects(point.player_stats).find((item) => item.player_id === player.id) ?? objects(point.player_stats)[0]
+    const stats = playerStats(point, player.id)
     if (!stats) continue
     const picked = objects(stats.relic_choices)
       .filter((choice) => choice.was_picked === true)
@@ -111,9 +166,7 @@ function relicChangeHistory(points: JsonObject[], player: JsonObject, finalRelic
     const gained = [...new Set([...picked, ...relicNames(stats.bought_relics)])]
     const removed = [...new Set(relicNames(stats.relics_removed))]
     if (!gained.length && !removed.length) continue
-    const room = objects(point.rooms)[0]
-    const context = displayName(room?.model_id) || displayName(point.map_point_type) || undefined
-    changes.push({ floor: index + 1, gained, removed, context })
+    changes.push({ floor: index + 1, gained, removed, context: pointContext(point) })
   }
 
   // Starter and automatic rewards can be absent from choice events. Keep them visible
@@ -168,9 +221,12 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource):
     cards,
     cardsEverOwned: cardEvents.everOwned,
     cardsRemovedDuringRun: cardEvents.removed,
+    cardChanges: cardChangeHistory(points, player, cards),
     relics,
     relicChanges: relicChangeHistory(points, player, relics),
     potions: potionHistory(points, player.id, player.potions),
+    finalPotions: itemNames(player.potions),
+    potionChanges: potionChangeHistory(points, player.id),
     notes: `Imported from ${source} run history.`,
   }
 }

@@ -36,4 +36,17 @@ describe('archives', () => {
     expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, cardsEverOwned: ['Dagger', 42] }] }))).toThrow()
     expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, cardsRemovedDuringRun: [42] }] }))).toThrow()
   })
+  it('enriches existing runs with card and potion changes and true final potions', () => {
+    const cardChange = { floor: 3, gained: ['Wisp'], removed: ['Strike'], transformed: [], upgraded: [], context: 'Reward' }
+    const potionChange = { floor: 4, gained: ['Fire Potion'], used: ['Weak Potion'], discarded: [] }
+    const old = { ...sample, potions: ['Weak Potion', 'Fire Potion'] }
+    const merged = mergeRuns([old], [{ ...old, cardChanges: [cardChange], finalPotions: ['Fire Potion'], potionChanges: [potionChange] }])
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({ potions: old.potions, cardChanges: [cardChange], finalPotions: ['Fire Potion'], potionChanges: [potionChange] })
+    expect(parseArchive(JSON.stringify(toArchive(merged)))).toEqual(merged)
+  })
+  it('rejects malformed card and potion change records', () => {
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, cardChanges: [{ floor: 2, gained: [], removed: [], transformed: [{ from: 'A' }], upgraded: [] }] }] }))).toThrow()
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, potionChanges: [{ floor: 2, gained: [], used: [42], discarded: [] }] }] }))).toThrow()
+  })
 })
