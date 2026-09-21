@@ -14,7 +14,9 @@ export interface Run {
   floor: number
   killedBy?: string
   cards: Pickup[]
+  cardEffects?: string[]
   relics: Pickup[]
+  potions?: string[]
   notes?: string
 }
 

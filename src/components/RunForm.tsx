@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { CARD_EFFECT_GROUPS, POTIONS } from '../lib/gameData'
 import { CHARACTERS, type Outcome, type Pickup, type Run } from '../lib/types'
 
 interface Props { onAdd: (run: Run) => void }
@@ -8,9 +9,33 @@ const parseCards = (text: string): Pickup[] => text.split('\n').map((line) => li
 })
 const parseNames = (text: string): Pickup[] => text.split(/\n|,/).map((name) => name.trim()).filter(Boolean).map((name) => ({ name }))
 
+function ChoicePicker({ label, options, value, onChange, grouped = false }: {
+  label: string
+  options: readonly string[] | typeof CARD_EFFECT_GROUPS
+  value: string[]
+  onChange: (value: string[]) => void
+  grouped?: boolean
+}) {
+  function add(choice: string) {
+    if (choice && !value.includes(choice)) onChange([...value, choice])
+  }
+  return <fieldset className="choice-picker wide">
+    <legend>{label}</legend>
+    <select aria-label={`Add ${label.toLowerCase()}`} value="" onChange={(event) => add(event.target.value)}>
+      <option value="">Choose an option…</option>
+      {grouped
+        ? (options as typeof CARD_EFFECT_GROUPS).map((group) => <optgroup label={group.label} key={group.label}>{group.options.map((option) => <option key={option}>{option}</option>)}</optgroup>)
+        : (options as readonly string[]).map((option) => <option key={option}>{option}</option>)}
+    </select>
+    {value.length > 0 && <div className="choice-list">{value.map((choice) => <span className="choice" key={choice}>{choice}<button type="button" onClick={() => onChange(value.filter((item) => item !== choice))} aria-label={`Remove ${choice}`}>×</button></span>)}</div>}
+  </fieldset>
+}
+
 export function RunForm({ onAdd }: Props) {
   const [cards, setCards] = useState('')
+  const [cardEffects, setCardEffects] = useState<string[]>([])
   const [relics, setRelics] = useState('')
+  const [potions, setPotions] = useState<string[]>([])
   const [outcome, setOutcome] = useState<Outcome>('loss')
   const today = new Date().toISOString().slice(0, 10)
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -19,9 +44,9 @@ export function RunForm({ onAdd }: Props) {
     onAdd({
       id: crypto.randomUUID(), date: String(data.get('date')), character: String(data.get('character')) as Run['character'],
       ascension: Number(data.get('ascension')), outcome, floor: Number(data.get('floor')), killedBy: String(data.get('killedBy') ?? '').trim() || undefined,
-      cards: parseCards(cards), relics: parseNames(relics), notes: String(data.get('notes') ?? '').trim() || undefined,
+      cards: parseCards(cards), cardEffects, relics: parseNames(relics), potions, notes: String(data.get('notes') ?? '').trim() || undefined,
     })
-    event.currentTarget.reset(); setCards(''); setRelics(''); setOutcome('loss')
+    event.currentTarget.reset(); setCards(''); setCardEffects([]); setRelics(''); setPotions([]); setOutcome('loss')
   }
   return <section className="panel form-panel">
     <div className="section-heading"><div><p className="eyebrow">New record</p><h2>Log a run</h2></div><p className="hint">For cards, use <code>Card name @ floor</code> to unlock timing insights.</p></div>
@@ -33,7 +58,9 @@ export function RunForm({ onAdd }: Props) {
       <label>Final floor<input name="floor" type="number" min="0" defaultValue="1" required /></label>
       <label>Defeated by<input name="killedBy" disabled={outcome !== 'loss'} placeholder="Enemy or boss" /></label>
       <label className="wide">Cards<textarea value={cards} onChange={(e) => setCards(e.target.value)} placeholder={'Pommel Strike @ 4\nInflame @ 12'} rows={5} /></label>
+      <ChoicePicker label="Card effects" options={CARD_EFFECT_GROUPS} value={cardEffects} onChange={setCardEffects} grouped />
       <label className="wide">Relics<textarea value={relics} onChange={(e) => setRelics(e.target.value)} placeholder="One per line" rows={3} /></label>
+      <ChoicePicker label="Potions" options={POTIONS} value={potions} onChange={setPotions} />
       <label className="wide">Notes<textarea name="notes" placeholder="What changed the run?" rows={3} /></label>
       <button className="primary" type="submit">Save run</button>
     </form>

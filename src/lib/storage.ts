@@ -2,10 +2,11 @@ import { CHARACTERS, OUTCOMES, type Pickup, type Run, type RunArchive } from './
 
 const STORAGE_KEY = 'spire2-runs-v1'
 const isPickup = (value: unknown): value is Pickup => typeof value === 'object' && value !== null && typeof (value as Pickup).name === 'string' && ((value as Pickup).floor === undefined || (Number.isInteger((value as Pickup).floor) && (value as Pickup).floor! >= 1))
+const isOptionalStringArray = (value: unknown) => value === undefined || (Array.isArray(value) && value.every((item) => typeof item === 'string'))
 export const isRun = (value: unknown): value is Run => {
   if (typeof value !== 'object' || value === null) return false
   const run = value as Run
-  return typeof run.id === 'string' && typeof run.date === 'string' && CHARACTERS.includes(run.character) && Number.isInteger(run.ascension) && run.ascension >= 0 && OUTCOMES.includes(run.outcome) && Number.isInteger(run.floor) && run.floor >= 0 && Array.isArray(run.cards) && run.cards.every(isPickup) && Array.isArray(run.relics) && run.relics.every(isPickup)
+  return typeof run.id === 'string' && typeof run.date === 'string' && CHARACTERS.includes(run.character) && Number.isInteger(run.ascension) && run.ascension >= 0 && OUTCOMES.includes(run.outcome) && Number.isInteger(run.floor) && run.floor >= 0 && Array.isArray(run.cards) && run.cards.every(isPickup) && isOptionalStringArray(run.cardEffects) && Array.isArray(run.relics) && run.relics.every(isPickup) && isOptionalStringArray(run.potions)
 }
 export function loadRuns(): Run[] { try { const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'); return Array.isArray(value) ? value.filter(isRun) : [] } catch { return [] } }
 export function saveRuns(runs: Run[]) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(runs)); return true } catch { return false } }
