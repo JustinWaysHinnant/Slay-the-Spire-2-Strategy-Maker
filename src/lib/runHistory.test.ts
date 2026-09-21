@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest'
+import { parseSts2Run } from './runHistory'
+
+const rawRun = JSON.stringify({
+  ascension: 4,
+  start_time: 1770000000,
+  win: false,
+  was_abandoned: false,
+  killed_by_encounter: 'ENCOUNTER.SLUDGE_SPINNER_WEAK',
+  players: [{
+    id: 1,
+    character: 'CHARACTER.NECROBINDER',
+    deck: [{ id: 'CARD.STRIKE_NECROBINDER', floor_added_to_deck: 1 }, { id: 'CARD.WISP', floor_added_to_deck: 3, current_upgrade_level: 1 }],
+    relics: [{ id: 'RELIC.BONE_TEA', floor_added_to_deck: 5 }],
+    potions: [],
+  }],
+  map_point_history: [[
+    { player_stats: [{ player_id: 1, potion_choices: [{ choice: 'POTION.WEAK_POTION', was_picked: true }] }] },
+    { player_stats: [{ player_id: 1 }] },
+  ]],
+})
+
+describe('Slay the Spire 2 run parser', () => {
+  it('maps a normal run into the strategy model', () => {
+    const run = parseSts2Run(rawRun, '1770000000.run', 'normal')
+    expect(run).toMatchObject({
+      id: 'sts2:normal:1770000000',
+      character: 'Necrobinder',
+      ascension: 4,
+      outcome: 'loss',
+      floor: 2,
+      killedBy: 'Sludge Spinner Weak',
+      cards: [{ name: 'Strike', floor: 1 }, { name: 'Wisp', floor: 3, upgraded: true }],
+      relics: [{ name: 'Bone Tea', floor: 5 }],
+      potions: ['Weak Potion'],
+    })
+  })
+
+  it('keeps normal and modded imports distinct', () => {
+    expect(parseSts2Run(rawRun, '1770000000.run', 'modded').id).toBe('sts2:modded:1770000000')
+  })
+
+  it('rejects unsupported modded characters without breaking other imports', () => {
+    const unknown = rawRun.replace('CHARACTER.NECROBINDER', 'CHARACTER.CUSTOM_HERO')
+    expect(() => parseSts2Run(unknown, 'run.run', 'modded')).toThrow(/Unsupported character/)
+  })
+})
