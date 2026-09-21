@@ -4,6 +4,8 @@ A local-first React dashboard for turning Slay the Spire 2 run history into pers
 
 The dashboard can read the game's `.run` files directly. In Chrome or Edge, connect the normal history folder and then the modded history folder; authorized folders are rescanned when the app opens, regains focus, and every 30 seconds while open. Other browsers receive a folder-import fallback. The usual Windows locations are:
 
+Choose the `history` folder itself when connecting. If your browser blocks folder access, use **Import .run files** to select one or more run files instead; that is a one-time import, not automatic sync.
+
 ```text
 %APPDATA%\SlayTheSpire2\steam\<Steam ID>\profile1\saves\history
 %APPDATA%\SlayTheSpire2\steam\<Steam ID>\modded\profile1\saves\history
