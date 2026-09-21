@@ -5,6 +5,7 @@ import { RunList } from './components/RunList'
 import { loadRuns, mergeRuns, parseArchive, saveRuns, toArchive } from './lib/storage'
 import type { Run } from './lib/types'
 import './styles/app.css'
+import './styles/card-editor.css'
 
 type Tab = 'dashboard' | 'log' | 'history'
 export default function App() {

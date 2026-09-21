@@ -3,7 +3,7 @@ export type Character = (typeof CHARACTERS)[number]
 export const OUTCOMES = ['win', 'loss', 'abandoned'] as const
 export type Outcome = (typeof OUTCOMES)[number]
 
-export interface Pickup { name: string; floor?: number }
+export interface Pickup { name: string; floor?: number; upgraded?: boolean; effects?: string[] }
 
 export interface Run {
   id: string

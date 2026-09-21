@@ -1,8 +1,8 @@
 import { CHARACTERS, OUTCOMES, type Pickup, type Run, type RunArchive } from './types'
 
 const STORAGE_KEY = 'spire2-runs-v1'
-const isPickup = (value: unknown): value is Pickup => typeof value === 'object' && value !== null && typeof (value as Pickup).name === 'string' && ((value as Pickup).floor === undefined || (Number.isInteger((value as Pickup).floor) && (value as Pickup).floor! >= 1))
 const isOptionalStringArray = (value: unknown) => value === undefined || (Array.isArray(value) && value.every((item) => typeof item === 'string'))
+const isPickup = (value: unknown): value is Pickup => typeof value === 'object' && value !== null && typeof (value as Pickup).name === 'string' && ((value as Pickup).floor === undefined || (Number.isInteger((value as Pickup).floor) && (value as Pickup).floor! >= 1)) && ((value as Pickup).upgraded === undefined || typeof (value as Pickup).upgraded === 'boolean') && isOptionalStringArray((value as Pickup).effects)
 export const isRun = (value: unknown): value is Run => {
   if (typeof value !== 'object' || value === null) return false
   const run = value as Run
