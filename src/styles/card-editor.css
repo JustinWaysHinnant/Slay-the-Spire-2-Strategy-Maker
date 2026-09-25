@@ -126,6 +126,8 @@
 .mode-options span { margin-left: 4px; color: var(--mint); }
 .mode-caveat { margin: 0 0 16px; }
 .history-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.clear-runs { border: 1px solid #8c4357; border-radius: 6px; background: #351d26; color: #f1a2b7; padding: 8px 12px; font-weight: 700; white-space: nowrap; }
+.clear-runs:hover { border-color: #dc6683; background: #48232f; color: #fff; }
 .mode-badge { display: inline-block; border: 1px solid #62596d; border-radius: 99px; padding: 4px 8px; font-size: 11px; white-space: nowrap; }
 .mode-badge.multiplayer { color: #f4cc81; border-color: #947342; }
 .mode-badge.singleplayer { color: var(--mint); border-color: #34756f; }
