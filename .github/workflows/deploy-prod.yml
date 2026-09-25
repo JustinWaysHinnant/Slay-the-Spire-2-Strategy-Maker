@@ -1,0 +1,29 @@
+name: Deploy Prod (sts2.dynamicacg.io)
+on:
+  push: { tags: ['v*'] }
+  workflow_dispatch:
+permissions: { contents: read }
+concurrency: { group: deploy-prod, cancel-in-progress: false }
+jobs:
+  deploy:
+    environment: { name: production, url: https://sts2.dynamicacg.io }
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: pnpm-lock.yaml }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm run build
+        env: { VITE_BASE: / }
+      - name: Upload to Hostinger
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./dist/
+          server-dir: ./
