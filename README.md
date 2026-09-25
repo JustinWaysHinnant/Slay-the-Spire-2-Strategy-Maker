@@ -30,3 +30,21 @@ npm run build
 Card entries support optional acquisition floors using `Card name @ floor`. The dashboard groups timed pickups into 10-floor bands and compares each band's win rate with the overall counted-run baseline. Abandoned runs and untimed legacy cards are excluded from that calculation.
 
 The default Vite base is `/Slay-the-Spire-2-Strategy-Maker/`, matching the GitHub Pages repository path. Set `VITE_BASE=/` for root or custom-domain deployments.
+
+## Environments
+
+| Environment | URL | Deploys when |
+| --- | --- | --- |
+| Dev | https://justinwayshinnant.github.io/Slay-the-Spire-2-Strategy-Maker/ | Every push to `main` |
+| Prod | https://sts2.dynamicacg.io | A `v*` tag is pushed (or the workflow is run manually) |
+
+Test changes on dev first, then promote the same commit to prod by tagging it:
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+The prod workflow runs typecheck, tests, and a `VITE_BASE=/` build, then uploads `dist/` to Hostinger over FTPS. It needs a `production` environment with the `FTP_HOST`, `FTP_USER`, and `FTP_PASSWORD` secrets. The FTP account's root should be the subdomain's document root.
+
+Run data lives in browser storage per origin, so dev and prod keep separate data. Use JSON export/import to move data between them.
