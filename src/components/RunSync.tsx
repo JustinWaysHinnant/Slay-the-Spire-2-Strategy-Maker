@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   chooseHistoryDirectory,
-  chooseRunFiles,
   forgetDirectoryHandle,
   hasReadPermission,
   isSameDirectory,
@@ -10,7 +9,6 @@ import {
   scanHistoryDirectory,
   scanSelectedFiles,
   supportsDirectoryPicker,
-  supportsOpenFilePicker,
   type RunSource,
   type ScanResult,
   type HistoryDirectoryHandle,
@@ -28,8 +26,6 @@ export function RunSync({ onRuns, onError }: Props) {
   const [connected, setConnected] = useState<Record<RunSource, boolean>>({ normal: false, modded: false })
   const normalFallback = useRef<HTMLInputElement>(null)
   const moddedFallback = useRef<HTMLInputElement>(null)
-  const normalFiles = useRef<HTMLInputElement>(null)
-  const moddedFiles = useRef<HTMLInputElement>(null)
   const handles = useRef<Partial<Record<RunSource, HistoryDirectoryHandle>>>({})
   const callbacks = useRef({ onRuns, onError })
   callbacks.current = { onRuns, onError }
@@ -74,7 +70,7 @@ export function RunSync({ onRuns, onError }: Props) {
           setConnected((current) => ({ ...current, [source]: false }))
         } else {
           if (await scan(source, true, true)) return
-          callbacks.current.onError(`Access to the ${source} folder was denied. Use Import .run files below, or refresh the page to reconnect.`)
+          callbacks.current.onError(`Access to the ${source} folder was denied. Use the one-time history-folder import below, or refresh the page to reconnect.`)
           return
         }
       }
@@ -83,7 +79,7 @@ export function RunSync({ onRuns, onError }: Props) {
       await useFolder(source, handle)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        callbacks.current.onError('No folder was connected. Select the history folder itself, or use Import .run files below.')
+        callbacks.current.onError('No folder was connected. Select the history folder itself, or use the one-time history-folder import below.')
         return
       }
       callbacks.current.onError(error instanceof Error ? error.message : 'Could not connect the run-history folder.')
@@ -106,24 +102,6 @@ export function RunSync({ onRuns, onError }: Props) {
       callbacks.current.onRuns(result.runs, source, result, true)
     } catch (error) {
       callbacks.current.onError(error instanceof Error ? error.message : 'Could not import the selected run folder.')
-    }
-  }
-
-  async function importFiles(source: RunSource) {
-    if (!supportsOpenFilePicker()) {
-      (source === 'normal' ? normalFiles : moddedFiles).current?.click()
-      return
-    }
-    try {
-      // Separate picker IDs remember separate Normal and Modded locations. When a
-      // folder is connected, start directly inside that source's history folder.
-      const files = await chooseRunFiles(source, handles.current[source])
-      if (!files.length) return
-      const result = await scanSelectedFiles(files, source)
-      callbacks.current.onRuns(result.runs, source, result, true)
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
-      callbacks.current.onError(error instanceof Error ? error.message : 'Could not import the selected run files.')
     }
   }
 
@@ -170,12 +148,10 @@ export function RunSync({ onRuns, onError }: Props) {
           {connected[source] ? `Sync ${sourceLabel(source)}` : `Connect ${sourceLabel(source)} folder`}
         </button>
         {connected[source] && <button className="sync-file-button" onClick={() => void changeFolder(source)}>Change folder</button>}
-        <button className="sync-file-button" onClick={() => void importFiles(source)}>Import {sourceLabel(source)} .run files</button>
+        <button className="sync-file-button" onClick={() => (source === 'normal' ? normalFallback : moddedFallback).current?.click()}>Import {sourceLabel(source)} history folder</button>
       </div>)}
     </div>
-    <input ref={normalFallback} hidden type="file" multiple {...{ webkitdirectory: '' }} onChange={(event) => void fallbackImport('normal', event.target.files)} />
-    <input ref={moddedFallback} hidden type="file" multiple {...{ webkitdirectory: '' }} onChange={(event) => void fallbackImport('modded', event.target.files)} />
-    <input ref={normalFiles} hidden type="file" accept=".run" multiple onChange={(event) => { void fallbackImport('normal', event.target.files); event.target.value = '' }} />
-    <input ref={moddedFiles} hidden type="file" accept=".run" multiple onChange={(event) => { void fallbackImport('modded', event.target.files); event.target.value = '' }} />
+    <input ref={normalFallback} hidden type="file" multiple {...{ webkitdirectory: '' }} onChange={(event) => { void fallbackImport('normal', event.target.files); event.target.value = '' }} />
+    <input ref={moddedFallback} hidden type="file" multiple {...{ webkitdirectory: '' }} onChange={(event) => { void fallbackImport('modded', event.target.files); event.target.value = '' }} />
   </section>
 }

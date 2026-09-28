@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isSameDirectory, parseSts2Run, runFilePickerOptions, type HistoryDirectoryHandle } from './runHistory'
+import { isSameDirectory, parseSts2Run, type HistoryDirectoryHandle } from './runHistory'
 
 const rawRun = JSON.stringify({
   ascension: 4,
@@ -26,12 +26,6 @@ describe('Slay the Spire 2 run parser', () => {
     const second = {} as HistoryDirectoryHandle
     expect(await isSameDirectory(first, second)).toBe(true)
     expect(await isSameDirectory(first, {} as HistoryDirectoryHandle)).toBe(false)
-  })
-
-  it('keeps separate remembered file-picker locations and starts in the connected folder', () => {
-    const modded = {} as HistoryDirectoryHandle
-    expect(runFilePickerOptions('normal').id).toBe('spire2-normal-run-files')
-    expect(runFilePickerOptions('modded', modded)).toMatchObject({ id: 'spire2-modded-run-files', startIn: modded, multiple: true })
   })
 
   it('maps a normal run into the strategy model', () => {
