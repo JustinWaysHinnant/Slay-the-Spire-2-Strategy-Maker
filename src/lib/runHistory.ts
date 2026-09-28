@@ -14,7 +14,7 @@ export interface HistoryDirectoryHandle {
   requestPermission(options?: { mode?: PermissionMode }): Promise<PermissionState>
 }
 
-interface HistoryFileHandle {
+export interface HistoryFileHandle {
   kind: 'file'
   name: string
   getFile(): Promise<File>
@@ -22,6 +22,12 @@ interface HistoryFileHandle {
 
 interface DirectoryPickerWindow extends Window {
   showDirectoryPicker?: (options?: { id?: string; mode?: PermissionMode }) => Promise<HistoryDirectoryHandle>
+  showOpenFilePicker?: (options?: {
+    id?: string
+    multiple?: boolean
+    startIn?: HistoryDirectoryHandle
+    types?: { description?: string; accept: Record<string, string[]> }[]
+  }) => Promise<HistoryFileHandle[]>
 }
 
 const DB_NAME = 'spire2-run-folders'
@@ -258,7 +264,7 @@ export async function scanHistoryDirectory(directory: HistoryDirectoryHandle, so
   return { runs, files, skipped }
 }
 
-export async function scanSelectedFiles(files: FileList, source: RunSource): Promise<ScanResult> {
+export async function scanSelectedFiles(files: Iterable<File>, source: RunSource): Promise<ScanResult> {
   const runFiles = [...files].filter((file) => file.name.toLowerCase().endsWith('.run'))
   const runs: Run[] = []
   let skipped = 0
@@ -273,11 +279,28 @@ export async function scanSelectedFiles(files: FileList, source: RunSource): Pro
 }
 
 export const supportsDirectoryPicker = () => typeof (window as DirectoryPickerWindow).showDirectoryPicker === 'function'
+export const supportsOpenFilePicker = () => typeof (window as DirectoryPickerWindow).showOpenFilePicker === 'function'
 
 export async function chooseHistoryDirectory(source: RunSource) {
   const picker = (window as DirectoryPickerWindow).showDirectoryPicker
   if (!picker) throw new Error('Folder syncing requires Chrome or Edge. Use the folder import fallback instead.')
   return picker({ id: `spire2-${source}-history`, mode: 'read' })
+}
+
+export async function chooseRunFiles(source: RunSource, startIn?: HistoryDirectoryHandle) {
+  const picker = (window as DirectoryPickerWindow).showOpenFilePicker
+  if (!picker) throw new Error('The source-specific file picker is unavailable in this browser.')
+  const handles = await picker(runFilePickerOptions(source, startIn))
+  return Promise.all(handles.map((handle) => handle.getFile()))
+}
+
+export function runFilePickerOptions(source: RunSource, startIn?: HistoryDirectoryHandle) {
+  return {
+    id: `spire2-${source}-run-files`,
+    multiple: true,
+    ...(startIn ? { startIn } : {}),
+    types: [{ description: 'Slay the Spire 2 run files', accept: { 'application/json': ['.run'] } }],
+  }
 }
 
 export async function isSameDirectory(first?: HistoryDirectoryHandle, second?: HistoryDirectoryHandle) {

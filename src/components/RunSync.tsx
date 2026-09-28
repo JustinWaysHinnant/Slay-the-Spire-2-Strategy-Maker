@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   chooseHistoryDirectory,
+  chooseRunFiles,
   forgetDirectoryHandle,
   hasReadPermission,
   isSameDirectory,
@@ -9,6 +10,7 @@ import {
   scanHistoryDirectory,
   scanSelectedFiles,
   supportsDirectoryPicker,
+  supportsOpenFilePicker,
   type RunSource,
   type ScanResult,
   type HistoryDirectoryHandle,
@@ -107,6 +109,24 @@ export function RunSync({ onRuns, onError }: Props) {
     }
   }
 
+  async function importFiles(source: RunSource) {
+    if (!supportsOpenFilePicker()) {
+      (source === 'normal' ? normalFiles : moddedFiles).current?.click()
+      return
+    }
+    try {
+      // Separate picker IDs remember separate Normal and Modded locations. When a
+      // folder is connected, start directly inside that source's history folder.
+      const files = await chooseRunFiles(source, handles.current[source])
+      if (!files.length) return
+      const result = await scanSelectedFiles(files, source)
+      callbacks.current.onRuns(result.runs, source, result, true)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      callbacks.current.onError(error instanceof Error ? error.message : 'Could not import the selected run files.')
+    }
+  }
+
   useEffect(() => {
     let active = true
     async function autoScan() {
@@ -150,7 +170,7 @@ export function RunSync({ onRuns, onError }: Props) {
           {connected[source] ? `Sync ${sourceLabel(source)}` : `Connect ${sourceLabel(source)} folder`}
         </button>
         {connected[source] && <button className="sync-file-button" onClick={() => void changeFolder(source)}>Change folder</button>}
-        <button className="sync-file-button" onClick={() => (source === 'normal' ? normalFiles : moddedFiles).current?.click()}>Import .run files</button>
+        <button className="sync-file-button" onClick={() => void importFiles(source)}>Import {sourceLabel(source)} .run files</button>
       </div>)}
     </div>
     <input ref={normalFallback} hidden type="file" multiple {...{ webkitdirectory: '' }} onChange={(event) => void fallbackImport('normal', event.target.files)} />
