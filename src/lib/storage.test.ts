@@ -15,6 +15,16 @@ describe('archives', () => {
   })
   it('rejects malformed archives', () => expect(() => parseArchive('{"version":1,"runs":[{}]}')).toThrow())
   it('keeps existing ids during merge', () => expect(mergeRuns([sample],[{...sample, outcome:'loss'}])[0].outcome).toBe('win'))
+  it('does not duplicate vanilla history copied into the modded profile', () => {
+    const normal = { ...sample, id: 'sts2:normal:1770000000', notes: 'Imported from normal run history.' }
+    const moddedCopy = { ...sample, id: 'sts2:modded:1770000000', notes: 'Imported from modded run history.' }
+    expect(mergeRuns([normal], [moddedCopy])).toEqual([normal])
+  })
+  it('keeps genuinely different normal and modded runs with the same filename', () => {
+    const normal = { ...sample, id: 'sts2:normal:1770000000' }
+    const modded = { ...sample, id: 'sts2:modded:1770000000', cards: [{ name: 'Modded Card', floor: 2 }] }
+    expect(mergeRuns([normal], [modded])).toEqual([normal, modded])
+  })
   it('enriches an existing run with relic history without duplicating or replacing its other fields', () => {
     const change = { floor: 12, removed: ['Old Relic'], gained: ['New Relic'], context: 'Relic Trader' }
     const merged = mergeRuns([sample], [{ ...sample, outcome: 'loss', relicChanges: [change] }])

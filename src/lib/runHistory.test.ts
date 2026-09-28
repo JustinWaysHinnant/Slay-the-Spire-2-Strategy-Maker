@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSts2Run } from './runHistory'
+import { isSameDirectory, parseSts2Run, type HistoryDirectoryHandle } from './runHistory'
 
 const rawRun = JSON.stringify({
   ascension: 4,
@@ -21,6 +21,13 @@ const rawRun = JSON.stringify({
 })
 
 describe('Slay the Spire 2 run parser', () => {
+  it('recognizes when normal and modded connections use the same directory', async () => {
+    const first = { isSameEntry: async (other: HistoryDirectoryHandle) => other === second } as HistoryDirectoryHandle
+    const second = {} as HistoryDirectoryHandle
+    expect(await isSameDirectory(first, second)).toBe(true)
+    expect(await isSameDirectory(first, {} as HistoryDirectoryHandle)).toBe(false)
+  })
+
   it('maps a normal run into the strategy model', () => {
     const run = parseSts2Run(rawRun, '1770000000.run', 'normal')
     expect(run).toMatchObject({

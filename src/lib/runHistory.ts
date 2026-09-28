@@ -9,6 +9,7 @@ export interface HistoryDirectoryHandle {
   kind: 'directory'
   name: string
   values(): AsyncIterableIterator<HistoryDirectoryHandle | HistoryFileHandle>
+  isSameEntry?(other: HistoryDirectoryHandle): Promise<boolean>
   queryPermission(options?: { mode?: PermissionMode }): Promise<PermissionState>
   requestPermission(options?: { mode?: PermissionMode }): Promise<PermissionState>
 }
@@ -276,9 +277,13 @@ export const supportsDirectoryPicker = () => typeof (window as DirectoryPickerWi
 export async function chooseHistoryDirectory(source: RunSource) {
   const picker = (window as DirectoryPickerWindow).showDirectoryPicker
   if (!picker) throw new Error('Folder syncing requires Chrome or Edge. Use the folder import fallback instead.')
-  const handle = await picker({ id: `spire2-${source}-history`, mode: 'read' })
-  await saveDirectoryHandle(source, handle)
-  return handle
+  return picker({ id: `spire2-${source}-history`, mode: 'read' })
+}
+
+export async function isSameDirectory(first?: HistoryDirectoryHandle, second?: HistoryDirectoryHandle) {
+  if (!first || !second) return false
+  if (first === second) return true
+  return first.isSameEntry ? first.isSameEntry(second) : false
 }
 
 function openDatabase() {
@@ -310,6 +315,17 @@ export async function loadDirectoryHandle(source: RunSource) {
   })
   database.close()
   return handle
+}
+
+export async function forgetDirectoryHandle(source: RunSource) {
+  const database = await openDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, 'readwrite')
+    transaction.objectStore(STORE_NAME).delete(source)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+  })
+  database.close()
 }
 
 export async function hasReadPermission(handle: HistoryDirectoryHandle, request = false) {

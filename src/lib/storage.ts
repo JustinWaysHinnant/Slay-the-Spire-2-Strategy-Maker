@@ -11,17 +11,23 @@ export const isRun = (value: unknown): value is Run => {
   const run = value as Run
   return typeof run.id === 'string' && typeof run.date === 'string' && CHARACTERS.includes(run.character) && Number.isInteger(run.ascension) && run.ascension >= 0 && OUTCOMES.includes(run.outcome) && Number.isInteger(run.floor) && run.floor >= 0 && (run.mode === undefined || run.mode === 'singleplayer' || run.mode === 'multiplayer') && (run.playerCount === undefined || (Number.isInteger(run.playerCount) && run.playerCount >= 1 && (run.mode !== 'singleplayer' || run.playerCount === 1) && (run.mode !== 'multiplayer' || run.playerCount >= 2))) && Array.isArray(run.cards) && run.cards.every(isPickup) && isOptionalStringArray(run.cardsEverOwned) && isOptionalStringArray(run.cardsRemovedDuringRun) && isOptionalStringArray(run.cardEffects) && (run.cardChanges === undefined || (Array.isArray(run.cardChanges) && run.cardChanges.every(isCardChange))) && Array.isArray(run.relics) && run.relics.every(isPickup) && (run.relicChanges === undefined || (Array.isArray(run.relicChanges) && run.relicChanges.every(isRelicChange))) && isOptionalStringArray(run.potions) && isOptionalStringArray(run.finalPotions) && (run.potionChanges === undefined || (Array.isArray(run.potionChanges) && run.potionChanges.every(isPotionChange)))
 }
-export function loadRuns(): Run[] { try { const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'); return Array.isArray(value) ? value.filter(isRun) : [] } catch { return [] } }
+export function loadRuns(): Run[] { try { const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'); return Array.isArray(value) ? dedupeMirroredImports(value.filter(isRun)) : [] } catch { return [] } }
 export function saveRuns(runs: Run[]) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(runs)); return true } catch { return false } }
 export const toArchive = (runs: Run[]): RunArchive => ({ version: 1, exportedAt: new Date().toISOString(), runs })
 export function parseArchive(text: string): Run[] { const value: unknown = JSON.parse(text); if (typeof value !== 'object' || value === null || (value as RunArchive).version !== 1 || !Array.isArray((value as RunArchive).runs) || !(value as RunArchive).runs.every(isRun)) throw new Error('This is not a valid Slay the Spire 2 Strategy Maker archive.'); return (value as RunArchive).runs }
-export function mergeRuns(existing: Run[], incoming: Run[]) {
-  const byId = new Map(incoming.map((run) => [run.id, run]))
-  const ids = new Set(existing.map((run) => run.id))
-  return [
-    ...existing.map((run) => {
-      const update = byId.get(run.id)
-      if (!update) return run
+function importedFile(run: Run) {
+  const match = /^sts2:(normal|modded):(.+)$/.exec(run.id)
+  return match ? { source: match[1], name: match[2] } : undefined
+}
+
+function sameMirroredRun(first: Run, second: Run) {
+  const a = importedFile(first), b = importedFile(second)
+  if (!a || !b || a.source === b.source || a.name !== b.name) return false
+  const snapshot = (run: Run) => JSON.stringify({ date: run.date, character: run.character, ascension: run.ascension, outcome: run.outcome, floor: run.floor, mode: run.mode, playerCount: run.playerCount, killedBy: run.killedBy, cards: run.cards, relics: run.relics })
+  return snapshot(first) === snapshot(second)
+}
+
+function enrichRun(run: Run, update: Run) {
       const relicChanges = run.relicChanges === undefined ? update.relicChanges : undefined
       const cardsEverOwned = run.cardsEverOwned === undefined ? update.cardsEverOwned : undefined
       const cardsRemovedDuringRun = run.cardsRemovedDuringRun === undefined ? update.cardsRemovedDuringRun : undefined
@@ -30,10 +36,27 @@ export function mergeRuns(existing: Run[], incoming: Run[]) {
       const potionChanges = run.potionChanges === undefined ? update.potionChanges : undefined
       const mode = run.mode === undefined ? update.mode : undefined
       const playerCount = run.playerCount === undefined ? update.playerCount : undefined
-      return relicChanges !== undefined || cardsEverOwned !== undefined || cardsRemovedDuringRun !== undefined || cardChanges !== undefined || finalPotions !== undefined || potionChanges !== undefined || mode !== undefined || playerCount !== undefined
+  return relicChanges !== undefined || cardsEverOwned !== undefined || cardsRemovedDuringRun !== undefined || cardChanges !== undefined || finalPotions !== undefined || potionChanges !== undefined || mode !== undefined || playerCount !== undefined
         ? { ...run, ...(relicChanges !== undefined ? { relicChanges } : {}), ...(cardsEverOwned !== undefined ? { cardsEverOwned } : {}), ...(cardsRemovedDuringRun !== undefined ? { cardsRemovedDuringRun } : {}), ...(cardChanges !== undefined ? { cardChanges } : {}), ...(finalPotions !== undefined ? { finalPotions } : {}), ...(potionChanges !== undefined ? { potionChanges } : {}), ...(mode !== undefined ? { mode } : {}), ...(playerCount !== undefined ? { playerCount } : {}) }
         : run
-    }),
-    ...incoming.filter((run) => !ids.has(run.id)),
-  ]
+}
+
+function dedupeMirroredImports(runs: Run[]) {
+  return runs.reduce<Run[]>((unique, run) => {
+    const index = unique.findIndex((candidate) => sameMirroredRun(candidate, run))
+    if (index < 0) unique.push(run)
+    else unique[index] = enrichRun(unique[index], run)
+    return unique
+  }, [])
+}
+
+export function mergeRuns(existing: Run[], incoming: Run[]) {
+  const merged = existing.map((run) => {
+    const update = incoming.find((candidate) => candidate.id === run.id || sameMirroredRun(run, candidate))
+    return update ? enrichRun(run, update) : run
+  })
+  for (const run of incoming) {
+    if (!merged.some((candidate) => candidate.id === run.id || sameMirroredRun(candidate, run))) merged.push(run)
+  }
+  return dedupeMirroredImports(merged)
 }
