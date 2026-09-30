@@ -1,4 +1,4 @@
-import { CHARACTERS, type CardChange, type Character, type Pickup, type PotionChange, type RelicChange, type Run, type RunSource } from './types'
+import { CHARACTERS, type CardChange, type Character, type OfferedChoice, type Pickup, type PotionChange, type RelicChange, type Run, type RunNode, type RunSource } from './types'
 
 export type { RunSource } from './types'
 
@@ -96,6 +96,67 @@ function pointContext(point: JsonObject) {
 
 function itemNames(value: unknown) {
   return (Array.isArray(value) ? value : []).map((item) => displayName(isObject(item) ? item.id : item)).filter(Boolean)
+}
+
+function finiteNumber(value: unknown) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : undefined
+}
+
+function offeredChoices(value: unknown, item: (choice: JsonObject) => unknown, pickedKey = 'was_picked'): OfferedChoice[] | undefined {
+  const choices = objects(value).flatMap((choice) => {
+    const name = displayName(item(choice))
+    return name ? [{ name, picked: choice[pickedKey] === true }] : []
+  })
+  return choices.length ? choices : undefined
+}
+
+function runNodes(value: unknown, acts: string[], player: JsonObject): RunNode[] {
+  if (!Array.isArray(value)) return []
+  let floor = 0
+  const nodes: RunNode[] = []
+  for (const [actIndex, rawAct] of value.entries()) {
+    const points = Array.isArray(rawAct) ? rawAct.filter(isObject) : isObject(rawAct) ? [rawAct] : []
+    for (const point of points) {
+      floor += 1
+      const room = objects(point.rooms)[0]
+      const stats = playerStats(point, player.id)
+      const cardChoices = offeredChoices(stats?.card_choices, (choice) => isObject(choice.card) ? choice.card.id : choice.card)
+      const relicChoices = offeredChoices(stats?.relic_choices, (choice) => choice.choice)
+      const potionChoices = offeredChoices(stats?.potion_choices, (choice) => choice.choice)
+      const ancientChoices = offeredChoices(stats?.ancient_choice, (choice) => choice.TextKey, 'was_chosen')
+      const eventChoices = objects(stats?.event_choices).map((choice) => displayName(isObject(choice.title) ? choice.title.key : choice.title)).filter(Boolean)
+      const node: RunNode = {
+        floor,
+        act: actIndex + 1,
+        actName: acts[actIndex],
+        mapType: displayName(point.map_point_type) || undefined,
+        roomType: displayName(room?.room_type) || undefined,
+        context: displayName(room?.model_id) || pointContext(point),
+        encounter: ['monster', 'elite', 'boss'].includes(String(room?.room_type).toLowerCase()) ? displayName(room?.model_id) || undefined : undefined,
+        monsters: itemNames(room?.monster_ids),
+        turns: finiteNumber(room?.turns_taken),
+        currentHp: finiteNumber(stats?.current_hp),
+        maxHp: finiteNumber(stats?.max_hp),
+        currentGold: finiteNumber(stats?.current_gold),
+        damageTaken: finiteNumber(stats?.damage_taken),
+        healed: finiteNumber(stats?.hp_healed),
+        goldGained: finiteNumber(stats?.gold_gained),
+        goldSpent: finiteNumber(stats?.gold_spent),
+        goldLost: finiteNumber(stats?.gold_lost),
+        cardChoices,
+        relicChoices,
+        potionChoices,
+        ancientChoices,
+        restChoices: itemNames(stats?.rest_site_choices),
+        eventChoices,
+        potionsUsed: itemNames(stats?.potion_used),
+        potionsDiscarded: itemNames(stats?.potion_discarded),
+      }
+      nodes.push(Object.fromEntries(Object.entries(node).filter(([, field]) => field !== undefined && (!Array.isArray(field) || field.length))) as unknown as RunNode)
+    }
+  }
+  return nodes
 }
 
 function cardChangeHistory(points: JsonObject[], player: JsonObject, finalCards: Pickup[]): CardChange[] {
@@ -223,6 +284,7 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource, 
   if (!player) throw new Error('Run file has no player data.')
   const timestamp = Number(value.start_time ?? fileName.replace(/\.run$/i, ''))
   const points = mapPoints(value.map_point_history)
+  const acts = itemNames(value.acts)
   const ascension = Number(value.ascension)
   if (!Number.isInteger(ascension) || ascension < 0) throw new Error('Run file has an invalid ascension level.')
 
@@ -242,6 +304,12 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource, 
     playerCount: players.length,
     steamPlayerSelected: players.length > 1 ? true : undefined,
     killedBy,
+    seed: typeof value.seed === 'string' ? value.seed : value.seed === undefined ? undefined : String(value.seed),
+    buildId: typeof value.build_id === 'string' ? value.build_id : undefined,
+    acts,
+    durationSeconds: finiteNumber(value.run_time),
+    gameMode: typeof value.game_mode === 'string' ? displayName(value.game_mode) : undefined,
+    nodes: runNodes(value.map_point_history, acts, player),
     cards,
     cardsEverOwned: cardEvents.everOwned,
     cardsRemovedDuringRun: cardEvents.removed,

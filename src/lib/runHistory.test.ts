@@ -3,6 +3,10 @@ import { isSameDirectory, parseSts2Run, type HistoryDirectoryHandle } from './ru
 
 const rawRun = JSON.stringify({
   ascension: 4,
+  seed: 'TESTSEED',
+  build_id: 'v0.107.1',
+  run_time: 1800,
+  acts: ['ACT.OVERGROWTH'],
   start_time: 1770000000,
   win: false,
   was_abandoned: false,
@@ -15,8 +19,8 @@ const rawRun = JSON.stringify({
     potions: [],
   }],
   map_point_history: [[
-    { player_stats: [{ player_id: 1, potion_choices: [{ choice: 'POTION.WEAK_POTION', was_picked: true }] }] },
-    { player_stats: [{ player_id: 1 }] },
+    { map_point_type: 'monster', rooms: [{ room_type: 'monster', model_id: 'ENCOUNTER.SEAPUNK_WEAK', turns_taken: 4 }], player_stats: [{ player_id: 1, current_hp: 55, max_hp: 70, current_gold: 115, damage_taken: 9, gold_gained: 15, potion_choices: [{ choice: 'POTION.WEAK_POTION', was_picked: true }] }] },
+    { map_point_type: 'monster', rooms: [{ room_type: 'monster', model_id: 'ENCOUNTER.SLUDGE_SPINNER_WEAK', turns_taken: 5 }], player_stats: [{ player_id: 1, current_hp: 48, max_hp: 70, card_choices: [{ card: { id: 'CARD.WISP' }, was_picked: true }, { card: { id: 'CARD.DEFY' }, was_picked: false }] }] },
   ]],
 })
 
@@ -64,7 +68,12 @@ describe('Slay the Spire 2 run parser', () => {
       finalPotions: [],
       mode: 'singleplayer',
       playerCount: 1,
+      seed: 'TESTSEED',
+      buildId: 'v0.107.1',
+      acts: ['Overgrowth'],
+      durationSeconds: 1800,
     })
+    expect(run.nodes?.[1]).toMatchObject({ floor: 2, act: 1, actName: 'Overgrowth', encounter: 'Sludge Spinner Weak', turns: 5, cardChoices: [{ name: 'Wisp', picked: true }, { name: 'Defy', picked: false }] })
   })
 
   it('keeps normal and modded imports distinct', () => {

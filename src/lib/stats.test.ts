@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bestCharacter, cardTimingStats, deathsByEnemy, floorDistribution, formatRate, outcomeCounts, pickupStats, winRate, winRateByAscension, winRateTrend } from './stats'
+import { bestCharacter, bootstrapMedianInterval, cardTimingStats, deathsByEnemy, encounterPressureStats, floorDistribution, formatRate, offeredDecisionStats, outcomeCounts, pickupStats, resourceMetrics, wilsonInterval, winRate, winRateByAscension, winRateTrend } from './stats'
 import type { Run } from './types'
 
 let sequence = 0
@@ -41,4 +41,22 @@ describe('other analytics', () => {
   it('requires enough runs for best character', () => expect(bestCharacter([run('win')],2)).toBeNull())
   it('computes a rolling trend', () => expect(winRateTrend([run('win'),run('loss')],1).map(x=>x.rate)).toEqual([1,0]))
   it('formats rates', () => expect(formatRate(2/3)).toBe('67%'))
+  it('computes bounded Wilson intervals', () => expect(wilsonInterval(1, 3)).toMatchObject({ low: expect.any(Number), high: expect.any(Number) }))
+  it('bootstraps a stable median interval', () => expect(bootstrapMedianInterval([1, 2, 9])).toEqual(bootstrapMedianInterval([1, 2, 9])))
+  it('compares offered picks with skips and the next fight', () => {
+    const runs = [
+      run('win', { nodes: [{ floor: 1, act: 1, cardChoices: [{ name: 'Wisp', picked: true }] }, { floor: 2, act: 1, encounter: 'Slime', damageTaken: 2 }] }),
+      run('loss', { nodes: [{ floor: 1, act: 1, cardChoices: [{ name: 'Wisp', picked: false }] }, { floor: 2, act: 1, encounter: 'Slime', damageTaken: 8 }] }),
+    ]
+    expect(offeredDecisionStats(runs)[0]).toMatchObject({ name: 'Wisp', offered: 2, picked: 1, skipped: 1, nextFightHpDelta: 6 })
+  })
+  it('measures encounter pressure per visit', () => {
+    const runs = [run('loss', { killedBy: 'Slime', nodes: [{ floor: 1, act: 1, encounter: 'Slime', damageTaken: 12, turns: 4, currentHp: 0 }] })]
+    expect(encounterPressureStats(runs)[0]).toMatchObject({ name: 'Slime', visits: 1, deaths: 1, medianHpLoss: 12, medianTurns: 4 })
+  })
+  it('summarizes route resources per run', () => {
+    const result = resourceMetrics([run('win', { nodes: [{ floor: 1, act: 1, roomType: 'Elite', damageTaken: 7, goldSpent: 20, potionsUsed: ['Fire Potion'] }] })])
+    expect(result.find((item) => item.key === 'elites')?.median).toBe(1)
+    expect(result.find((item) => item.key === 'potions')?.median).toBe(1)
+  })
 })

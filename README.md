@@ -16,6 +16,8 @@ For multiplayer Normal and Modded files, the importer matches the verified signe
 
 Card signals count each card a run owned at any point, including cards later removed or transformed. Each signal also shows removals among runs with recorded removal history. Imported runs use the game's card gain, removal, transformation, and final-deck records. Re-import older `.run` files to enrich existing runs without duplicates; until then, older saved runs fall back to their final decks. For manual runs, list removed cards separately beneath the final-card entries.
 
+The strategy dashboard preserves each imported run's seed, game build, Acts, chronological route, combat turns, HP and gold changes, and complete card, relic, potion, Ancient, event, and rest-site choices. Its decision table compares picked and skipped card offers with the next fight's HP cost; encounter pressure reports deaths per visit and median HP/turn costs; routing and resource panels summarize the selected scope. Filters cover patch, character, Ascension, and Act. Rates use 95% Wilson intervals, medians use deterministic 95% bootstrap intervals, and small card-pick samples are shrunk toward the matching character-and-Ascension baseline. Re-import older history files to populate these fields.
+
 ```text
 %APPDATA%\SlayTheSpire2\steam\<Steam ID>\profile1\saves\history
 %APPDATA%\SlayTheSpire2\steam\<Steam ID>\modded\profile1\saves\history
