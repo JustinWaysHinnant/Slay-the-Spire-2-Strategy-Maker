@@ -9,7 +9,7 @@ const isPotionChange = (value: unknown): value is PotionChange => typeof value =
 export const isRun = (value: unknown): value is Run => {
   if (typeof value !== 'object' || value === null) return false
   const run = value as Run
-  return typeof run.id === 'string' && typeof run.date === 'string' && CHARACTERS.includes(run.character) && Number.isInteger(run.ascension) && run.ascension >= 0 && OUTCOMES.includes(run.outcome) && Number.isInteger(run.floor) && run.floor >= 0 && (run.source === undefined || run.source === 'normal' || run.source === 'modded') && (run.mode === undefined || run.mode === 'singleplayer' || run.mode === 'multiplayer') && (run.playerCount === undefined || (Number.isInteger(run.playerCount) && run.playerCount >= 1 && (run.mode !== 'singleplayer' || run.playerCount === 1) && (run.mode !== 'multiplayer' || run.playerCount >= 2))) && Array.isArray(run.cards) && run.cards.every(isPickup) && isOptionalStringArray(run.cardsEverOwned) && isOptionalStringArray(run.cardsRemovedDuringRun) && isOptionalStringArray(run.cardEffects) && (run.cardChanges === undefined || (Array.isArray(run.cardChanges) && run.cardChanges.every(isCardChange))) && Array.isArray(run.relics) && run.relics.every(isPickup) && (run.relicChanges === undefined || (Array.isArray(run.relicChanges) && run.relicChanges.every(isRelicChange))) && isOptionalStringArray(run.potions) && isOptionalStringArray(run.finalPotions) && (run.potionChanges === undefined || (Array.isArray(run.potionChanges) && run.potionChanges.every(isPotionChange)))
+  return typeof run.id === 'string' && typeof run.date === 'string' && CHARACTERS.includes(run.character) && Number.isInteger(run.ascension) && run.ascension >= 0 && OUTCOMES.includes(run.outcome) && Number.isInteger(run.floor) && run.floor >= 0 && (run.source === undefined || run.source === 'normal' || run.source === 'modded') && (run.mode === undefined || run.mode === 'singleplayer' || run.mode === 'multiplayer') && (run.playerCount === undefined || (Number.isInteger(run.playerCount) && run.playerCount >= 1 && (run.mode !== 'singleplayer' || run.playerCount === 1) && (run.mode !== 'multiplayer' || run.playerCount >= 2))) && (run.steamPlayerSelected === undefined || (run.steamPlayerSelected === true && run.mode === 'multiplayer')) && Array.isArray(run.cards) && run.cards.every(isPickup) && isOptionalStringArray(run.cardsEverOwned) && isOptionalStringArray(run.cardsRemovedDuringRun) && isOptionalStringArray(run.cardEffects) && (run.cardChanges === undefined || (Array.isArray(run.cardChanges) && run.cardChanges.every(isCardChange))) && Array.isArray(run.relics) && run.relics.every(isPickup) && (run.relicChanges === undefined || (Array.isArray(run.relicChanges) && run.relicChanges.every(isRelicChange))) && isOptionalStringArray(run.potions) && isOptionalStringArray(run.finalPotions) && (run.potionChanges === undefined || (Array.isArray(run.potionChanges) && run.potionChanges.every(isPotionChange)))
 }
 export function loadRuns(): Run[] { try { const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'); return Array.isArray(value) ? dedupeMirroredImports(value.filter(isRun)) : [] } catch { return [] } }
 export function saveRuns(runs: Run[]) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(runs)); return true } catch { return false } }
@@ -54,7 +54,11 @@ function dedupeMirroredImports(runs: Run[]) {
 export function mergeRuns(existing: Run[], incoming: Run[]) {
   const merged = existing.map((run) => {
     const update = incoming.find((candidate) => candidate.id === run.id || sameMirroredRun(run, candidate))
-    return update ? enrichRun(run, update) : run
+    if (!update) return run
+    // Re-imported multiplayer files are authoritative for the signed-in player.
+    // This migrates records created before Steam-aware player selection existed.
+    if (run.id === update.id && update.steamPlayerSelected) return update
+    return enrichRun(run, update)
   })
   for (const run of incoming) {
     if (!merged.some((candidate) => candidate.id === run.id || sameMirroredRun(candidate, run))) merged.push(run)

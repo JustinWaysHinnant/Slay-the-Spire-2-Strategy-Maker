@@ -20,6 +20,7 @@ export interface Run {
   source?: RunSource
   mode?: RunMode
   playerCount?: number
+  steamPlayerSelected?: true
   killedBy?: string
   cards: Pickup[]
   cardsEverOwned?: string[]

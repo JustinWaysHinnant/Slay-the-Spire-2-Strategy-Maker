@@ -16,13 +16,14 @@ import {
 import type { Run } from '../lib/types'
 
 interface Props {
+  steamId: string
   onRuns: (runs: Run[], source: RunSource, result: ScanResult, announce: boolean) => void
   onError: (message: string) => void
 }
 
 const sourceLabel = (source: RunSource) => source === 'normal' ? 'Normal' : 'Modded'
 
-export function RunSync({ onRuns, onError }: Props) {
+export function RunSync({ steamId, onRuns, onError }: Props) {
   const [connected, setConnected] = useState<Record<RunSource, boolean>>({ normal: false, modded: false })
   const normalFallback = useRef<HTMLInputElement>(null)
   const moddedFallback = useRef<HTMLInputElement>(null)
@@ -44,7 +45,7 @@ export function RunSync({ onRuns, onError }: Props) {
     await saveDirectoryHandle(source, handle)
     handles.current[source] = handle
     setConnected((current) => ({ ...current, [source]: true }))
-    const result = await scanHistoryDirectory(handle, source)
+    const result = await scanHistoryDirectory(handle, source, steamId)
     callbacks.current.onRuns(result.runs, source, result, true)
   }
 
@@ -52,7 +53,7 @@ export function RunSync({ onRuns, onError }: Props) {
     const handle = handles.current[source]
     if (!handle || !await hasReadPermission(handle, requestPermission)) return false
     setConnected((current) => ({ ...current, [source]: true }))
-    const result = await scanHistoryDirectory(handle, source)
+    const result = await scanHistoryDirectory(handle, source, steamId)
     callbacks.current.onRuns(result.runs, source, result, announce)
     return true
   }
@@ -98,7 +99,7 @@ export function RunSync({ onRuns, onError }: Props) {
   async function fallbackImport(source: RunSource, files?: FileList | null) {
     if (!files?.length) return
     try {
-      const result = await scanSelectedFiles(files, source)
+      const result = await scanSelectedFiles(files, source, steamId)
       callbacks.current.onRuns(result.runs, source, result, true)
     } catch (error) {
       callbacks.current.onError(error instanceof Error ? error.message : 'Could not import the selected run folder.')
@@ -125,7 +126,7 @@ export function RunSync({ onRuns, onError }: Props) {
           if (handle) handles.current[source] = handle
           if (!active || !handle || !await hasReadPermission(handle)) continue
           setConnected((current) => ({ ...current, [source]: true }))
-          const result = await scanHistoryDirectory(handle, source)
+          const result = await scanHistoryDirectory(handle, source, steamId)
           if (active) callbacks.current.onRuns(result.runs, source, result, false)
         } catch {
           // A disconnected or moved folder can be reconnected with its button.
@@ -137,10 +138,10 @@ export function RunSync({ onRuns, onError }: Props) {
     const onFocus = () => void autoScan()
     window.addEventListener('focus', onFocus)
     return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', onFocus) }
-  }, [])
+  }, [steamId])
 
   return <section className="sync-panel panel">
-    <div><p className="eyebrow">Automatic import</p><h2>Run folders</h2><p>For automatic sync, select the <code>history</code> folder itself—not a <code>.run</code> file. Copied runs shared by the normal and modded profiles are counted once.</p></div>
+    <div><p className="eyebrow">Automatic import</p><h2>Run folders</h2><p>For automatic sync, select the <code>history</code> folder itself—not a <code>.run</code> file. Multiplayer imports use only the signed-in Steam player's statistics.</p></div>
     <div className="sync-actions">
       {(['normal', 'modded'] as const).map((source) => <div className="sync-source" key={source}>
         <button className="secondary" onClick={() => void connect(source)}>

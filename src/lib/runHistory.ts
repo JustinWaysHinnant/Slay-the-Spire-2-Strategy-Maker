@@ -30,6 +30,21 @@ const STORE_NAME = 'handles'
 const isObject = (value: unknown): value is JsonObject => typeof value === 'object' && value !== null && !Array.isArray(value)
 const objects = (value: unknown): JsonObject[] => Array.isArray(value) ? value.filter(isObject) : []
 
+class SteamPlayerNotFoundError extends Error {}
+
+function parseRunJson(text: string): unknown {
+  // SteamID64 values exceed JavaScript's safe integer range. Preserve the raw
+  // digits for both player records and per-floor player statistics.
+  const losslessPlayerIds = text.replace(/("(?:id|player_id)"\s*:\s*)(\d{16,20})(?=\s*[,}])/g, '$1"$2"')
+  return JSON.parse(losslessPlayerIds)
+}
+
+function samePlayerId(first: unknown, second: unknown) {
+  return (typeof first === 'string' || typeof first === 'number')
+    && (typeof second === 'string' || typeof second === 'number')
+    && String(first) === String(second)
+}
+
 function displayName(value: unknown) {
   if (typeof value !== 'string' || !value) return ''
   const id = value.includes('.') ? value.slice(value.lastIndexOf('.') + 1) : value
@@ -72,7 +87,7 @@ function mapPoints(value: unknown) {
 }
 
 function playerStats(point: JsonObject, playerId: unknown) {
-  return objects(point.player_stats).find((item) => item.player_id === playerId) ?? objects(point.player_stats)[0]
+  return objects(point.player_stats).find((item) => samePlayerId(item.player_id, playerId))
 }
 
 function pointContext(point: JsonObject) {
@@ -182,7 +197,7 @@ function relicChangeHistory(points: JsonObject[], player: JsonObject, finalRelic
 function potionHistory(points: JsonObject[], playerId: unknown, finalPotions: unknown) {
   const collected = new Set<string>()
   for (const point of points) {
-    const stats = objects(point.player_stats).find((item) => item.player_id === playerId) ?? objects(point.player_stats)[0]
+    const stats = playerStats(point, playerId)
     for (const choice of objects(stats?.potion_choices)) {
       if (choice.was_picked === true) {
         const name = displayName(choice.choice)
@@ -197,11 +212,14 @@ function potionHistory(points: JsonObject[], playerId: unknown, finalPotions: un
   return [...collected]
 }
 
-export function parseSts2Run(text: string, fileName: string, source: RunSource): Run {
-  const value: unknown = JSON.parse(text)
+export function parseSts2Run(text: string, fileName: string, source: RunSource, steamId?: string): Run {
+  const value = parseRunJson(text)
   if (!isObject(value)) throw new Error('Run file is not a JSON object.')
   const players = objects(value.players)
-  const player = players[0]
+  const player = players.length > 1
+    ? players.find((candidate) => samePlayerId(candidate.id, steamId))
+    : players[0]
+  if (players.length > 1 && !player) throw new SteamPlayerNotFoundError('Signed-in Steam player is not present in this multiplayer run.')
   if (!player) throw new Error('Run file has no player data.')
   const timestamp = Number(value.start_time ?? fileName.replace(/\.run$/i, ''))
   const points = mapPoints(value.map_point_history)
@@ -222,6 +240,7 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource):
     source,
     mode: players.length > 1 ? 'multiplayer' : 'singleplayer',
     playerCount: players.length,
+    steamPlayerSelected: players.length > 1 ? true : undefined,
     killedBy,
     cards,
     cardsEverOwned: cardEvents.everOwned,
@@ -240,37 +259,42 @@ export interface ScanResult {
   runs: Run[]
   files: number
   skipped: number
+  unmatched: number
 }
 
-export async function scanHistoryDirectory(directory: HistoryDirectoryHandle, source: RunSource): Promise<ScanResult> {
+export async function scanHistoryDirectory(directory: HistoryDirectoryHandle, source: RunSource, steamId: string): Promise<ScanResult> {
   const runs: Run[] = []
   let files = 0
   let skipped = 0
+  let unmatched = 0
   for await (const entry of directory.values()) {
     if (entry.kind !== 'file' || !entry.name.toLowerCase().endsWith('.run')) continue
     files += 1
     try {
       const file = await entry.getFile()
-      runs.push(parseSts2Run(await file.text(), entry.name, source))
-    } catch {
-      skipped += 1
+      runs.push(parseSts2Run(await file.text(), entry.name, source, steamId))
+    } catch (error) {
+      if (error instanceof SteamPlayerNotFoundError) unmatched += 1
+      else skipped += 1
     }
   }
-  return { runs, files, skipped }
+  return { runs, files, skipped, unmatched }
 }
 
-export async function scanSelectedFiles(files: Iterable<File>, source: RunSource): Promise<ScanResult> {
+export async function scanSelectedFiles(files: Iterable<File>, source: RunSource, steamId: string): Promise<ScanResult> {
   const runFiles = [...files].filter((file) => file.name.toLowerCase().endsWith('.run'))
   const runs: Run[] = []
   let skipped = 0
+  let unmatched = 0
   for (const file of runFiles) {
     try {
-      runs.push(parseSts2Run(await file.text(), file.name, source))
-    } catch {
-      skipped += 1
+      runs.push(parseSts2Run(await file.text(), file.name, source, steamId))
+    } catch (error) {
+      if (error instanceof SteamPlayerNotFoundError) unmatched += 1
+      else skipped += 1
     }
   }
-  return { runs, files: runFiles.length, skipped }
+  return { runs, files: runFiles.length, skipped, unmatched }
 }
 
 export const supportsDirectoryPicker = () => typeof (window as DirectoryPickerWindow).showDirectoryPicker === 'function'

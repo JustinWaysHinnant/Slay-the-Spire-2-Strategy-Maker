@@ -20,6 +20,26 @@ const rawRun = JSON.stringify({
   ]],
 })
 
+const ownerSteamId = '76561198000000001'
+const friendSteamId = '76561198000000002'
+
+function multiplayerRun() {
+  const value = JSON.parse(rawRun)
+  value.players = [
+    { ...value.players[0], id: '__FRIEND__', character: 'CHARACTER.SILENT', deck: [{ id: 'CARD.BACKSTAB', floor_added_to_deck: 1 }], relics: [{ id: 'RELIC.RING_OF_THE_SNAKE', floor_added_to_deck: 1 }] },
+    { ...value.players[0], id: '__OWNER__', character: 'CHARACTER.DEFECT', deck: [{ id: 'CARD.ZAP', floor_added_to_deck: 1 }], relics: [{ id: 'RELIC.CRACKED_CORE', floor_added_to_deck: 1 }], potions: [{ id: 'POTION.FIRE_POTION' }] },
+  ]
+  value.map_point_history = [[{
+    player_stats: [
+      { player_id: '__FRIEND__', cards_gained: [{ id: 'CARD.DAGGER_THROW' }] },
+      { player_id: '__OWNER__', cards_gained: [{ id: 'CARD.BALL_LIGHTNING' }], potion_choices: [{ choice: 'POTION.FIRE_POTION', was_picked: true }] },
+    ],
+  }]]
+  return JSON.stringify(value)
+    .replaceAll('"__FRIEND__"', friendSteamId)
+    .replaceAll('"__OWNER__"', ownerSteamId)
+}
+
 describe('Slay the Spire 2 run parser', () => {
   it('recognizes when normal and modded connections use the same directory', async () => {
     const first = { isSameEntry: async (other: HistoryDirectoryHandle) => other === second } as HistoryDirectoryHandle
@@ -52,11 +72,27 @@ describe('Slay the Spire 2 run parser', () => {
   })
 
   it('classifies co-op from player count rather than game_mode', () => {
-    const value = JSON.parse(rawRun)
-    value.game_mode = 'standard'
-    value.players.push({ ...value.players[0], id: 2, character: 'CHARACTER.SILENT' })
-    const run = parseSts2Run(JSON.stringify(value), '1770000000.run', 'normal')
-    expect(run).toMatchObject({ mode: 'multiplayer', playerCount: 2, character: 'Necrobinder' })
+    const run = parseSts2Run(multiplayerRun(), '1770000000.run', 'normal', ownerSteamId)
+    expect(run).toMatchObject({ mode: 'multiplayer', playerCount: 2, steamPlayerSelected: true })
+  })
+
+  it('uses only the signed-in Steam player throughout a multiplayer run', () => {
+    const run = parseSts2Run(multiplayerRun(), '1770000000.run', 'modded', ownerSteamId)
+    expect(run).toMatchObject({
+      source: 'modded',
+      character: 'Defect',
+      steamPlayerSelected: true,
+      cards: [{ name: 'Zap', floor: 1 }],
+      relics: [{ name: 'Cracked Core', floor: 1 }],
+      finalPotions: ['Fire Potion'],
+    })
+    expect(run.cardsEverOwned).toEqual(expect.arrayContaining(['Zap', 'Ball Lightning']))
+    expect(run.cardsEverOwned).not.toEqual(expect.arrayContaining(['Backstab', 'Dagger Throw']))
+    expect(run.potions).toEqual(['Fire Potion'])
+  })
+
+  it('never falls back to a friend when the signed-in Steam player is absent', () => {
+    expect(() => parseSts2Run(multiplayerRun(), '1770000000.run', 'normal', '76561198000000003')).toThrow(/Signed-in Steam player/)
   })
 
   it('keeps cards removed or transformed during the run in signal history', () => {

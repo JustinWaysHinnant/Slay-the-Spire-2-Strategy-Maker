@@ -12,6 +12,8 @@ History shows the relics held at the end of each run and a collapsible floor-by-
 
 Dashboard and History filters separate Normal from Modded saves and Singleplayer from Multiplayer runs. Character filtering appears for Singleplayer, while History includes an abandoned-run breakdown for every character in both run types. Older records without run-type metadata are treated as Singleplayer instead of appearing in a separate unclassified bucket.
 
+For multiplayer Normal and Modded files, the importer matches the verified signed-in SteamID64 to `players[].id` and uses only that player's character, deck, relics, potions, and per-floor history. Multiplayer files that do not contain the signed-in SteamID are skipped rather than falling back to another player. Reconnecting or re-importing a folder replaces older first-player multiplayer records with the correct signed-in player data.
+
 Card signals count each card a run owned at any point, including cards later removed or transformed. Each signal also shows removals among runs with recorded removal history. Imported runs use the game's card gain, removal, transformation, and final-deck records. Re-import older `.run` files to enrich existing runs without duplicates; until then, older saved runs fall back to their final decks. For manual runs, list removed cards separately beneath the final-card entries.
 
 ```text
