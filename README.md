@@ -2,6 +2,8 @@
 
 A local-first React dashboard for turning Slay the Spire 2 run history into personal strategy insights. All analytics are pure functions, all data stays in browser storage, and JSON import/export makes it portable.
 
+The hosted app is protected by Steam OpenID. Steam verifies account ownership and the authentication service returns a signed, seven-day session containing only the verified SteamID64. Run-history files and analytics remain in the browser and are never uploaded to the authentication service. No Steam Web API key is used or included in the frontend.
+
 The dashboard can read the game's `.run` files directly. In Chrome or Edge, connect the normal history folder and then the modded history folder; authorized folders are rescanned when the app opens, regains focus, and every 30 seconds while open. Other browsers receive a folder-import fallback. The usual Windows locations are:
 
 Choose the `history` folder itself when connecting. The app rejects connecting the exact same folder as both Normal and Modded. Current game versions may initially copy vanilla history into the separate modded profile; identical copied runs are recognized and counted only once. If automatic folder access is unavailable, use **Import Normal/Modded history folder** and select the appropriate `history` directory; that is a one-time import, not automatic sync.
@@ -32,3 +34,14 @@ npm run build
 Card entries support optional acquisition floors using `Card name @ floor`. The dashboard groups timed pickups into 10-floor bands and compares each band's win rate with the overall counted-run baseline. Abandoned runs and untimed legacy cards are excluded from that calculation.
 
 The default Vite base is `/Slay-the-Spire-2-Strategy-Maker/`, matching the GitHub Pages repository path. Set `VITE_BASE=/` for root or custom-domain deployments.
+
+## Steam authentication service
+
+The serverless authentication gateway is in `worker/` and is configured for Cloudflare Workers. It verifies Steam's OpenID response directly with Steam before issuing an HMAC-signed session. `SESSION_SECRET` is a server-only Cloudflare secret and must be at least 32 random characters.
+
+```bash
+pnpm exec wrangler secret put SESSION_SECRET --cwd worker
+pnpm exec wrangler deploy --cwd worker
+```
+
+Set the GitHub repository Actions variable `STEAM_AUTH_API` to the deployed Worker origin, such as `https://sts2-strategy-maker-auth.example.workers.dev`, then redeploy GitHub Pages. For local frontend development, set `VITE_STEAM_AUTH_API` in an ignored `.env.local` file. For local Worker development, store `SESSION_SECRET` in an ignored `worker/.dev.vars` file.
