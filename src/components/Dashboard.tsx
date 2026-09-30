@@ -1,28 +1,32 @@
 import { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { runMode, runSource } from '../lib/runClassification'
 import { bestCharacter, cardTimingStats, formatRate, pickupStats, winRate, winRateByCharacter, winRateTrend } from '../lib/stats'
-import type { Run } from '../lib/types'
-
-type ModeView = 'singleplayer' | 'multiplayer' | 'unclassified'
+import { CHARACTERS, type Run, type RunMode, type RunSource } from '../lib/types'
 
 export function Dashboard({ runs }: { runs: Run[] }) {
-  const [mode, setMode] = useState<ModeView>('singleplayer')
-  const filtered = runs.filter((run) => (run.mode ?? 'unclassified') === mode)
+  const [mode, setMode] = useState<RunMode>('singleplayer')
+  const [source, setSource] = useState<RunSource>('normal')
+  const [character, setCharacter] = useState('all')
+  const filtered = runs.filter((run) => runSource(run) === source && runMode(run) === mode && (mode === 'multiplayer' || character === 'all' || run.character === character))
   return <div className="dashboard">
     <section className="mode-filter panel" aria-label="Dashboard run mode">
-      <div><strong>Run type</strong><small>Dashboard statistics are calculated only from the selected group.</small></div>
-      <div className="mode-options">{(['singleplayer', 'multiplayer', 'unclassified'] as const).map((option) => <button type="button" key={option} aria-pressed={mode === option} onClick={() => setMode(option)}>{option === 'singleplayer' ? 'Singleplayer' : option === 'multiplayer' ? 'Multiplayer' : 'Unclassified'} <span>{runs.filter((run) => (run.mode ?? 'unclassified') === option).length}</span></button>)}</div>
+      <div><strong>Dashboard filters</strong><small>Choose a save source and run type; character filtering is available for singleplayer.</small></div>
+      <div className="dashboard-filters">
+        <label>Save source<select value={source} onChange={(event) => setSource(event.target.value as RunSource)}><option value="normal">Normal</option><option value="modded">Modded</option></select></label>
+        <label>Run type<select value={mode} onChange={(event) => { const next = event.target.value as RunMode; setMode(next); if (next === 'multiplayer') setCharacter('all') }}><option value="singleplayer">Singleplayer</option><option value="multiplayer">Multiplayer</option></select></label>
+        {mode === 'singleplayer' ? <label>Character<select value={character} onChange={(event) => setCharacter(event.target.value)}><option value="all">All characters</option>{CHARACTERS.map((name) => <option key={name}>{name}</option>)}</select></label> : null}
+      </div>
     </section>
     {mode === 'multiplayer' && filtered.length > 0 ? <p className="mode-caveat">Co-op imports currently show the first player recorded in the run file. Their cards, relics, and potions may not be yours.</p> : null}
-    {mode === 'unclassified' && filtered.length > 0 ? <p className="mode-caveat">These older records have no run-type label. Re-import their history files, or log new runs with a run type, to separate them.</p> : null}
     <DashboardContent runs={filtered} mode={mode} />
   </div>
 }
 
-function DashboardContent({ runs, mode }: { runs: Run[]; mode: ModeView }) {
+function DashboardContent({ runs, mode }: { runs: Run[]; mode: RunMode }) {
   const overall = winRate(runs), best = bestCharacter(runs), characters = Object.entries(winRateByCharacter(runs)).map(([name, stat]) => ({ name, rate: Math.round((stat?.rate ?? 0) * 100), runs: stat?.total ?? 0 }))
   const cards = pickupStats(runs, 'cards', 3).slice(0, 8), timing = cardTimingStats(runs, 10, 3).map((item) => ({ ...item, ratePercent: Math.round(item.rate * 100) })), trend = winRateTrend(runs, 10).map((item) => ({ ...item, ratePercent: Math.round(item.rate * 100) }))
-  if (!runs.length) return <section className="empty"><span>0</span><h2>No {mode === 'singleplayer' ? 'singleplayer' : mode === 'multiplayer' ? 'multiplayer' : 'unclassified'} runs yet.</h2><p>{mode === 'unclassified' ? 'Older runs without a run type appear here.' : 'Import run history or log a run to fill this view.'}</p></section>
+  if (!runs.length) return <section className="empty"><span>0</span><h2>No {mode} runs match these filters.</h2><p>Import run history or log a run to fill this view.</p></section>
   return <div>
     <section className="stat-grid">
       <article className="stat"><span>Tracked runs</span><strong>{runs.length}</strong><small>{overall.total} counted</small></article>

@@ -36,6 +36,7 @@ describe('Slay the Spire 2 run parser', () => {
       ascension: 4,
       outcome: 'loss',
       floor: 2,
+      source: 'normal',
       killedBy: 'Sludge Spinner Weak',
       cards: [{ name: 'Strike', floor: 1 }, { name: 'Wisp', floor: 3, upgraded: true }],
       relics: [{ name: 'Bone Tea', floor: 5 }],
@@ -47,7 +48,7 @@ describe('Slay the Spire 2 run parser', () => {
   })
 
   it('keeps normal and modded imports distinct', () => {
-    expect(parseSts2Run(rawRun, '1770000000.run', 'modded').id).toBe('sts2:modded:1770000000')
+    expect(parseSts2Run(rawRun, '1770000000.run', 'modded')).toMatchObject({ id: 'sts2:modded:1770000000', source: 'modded' })
   })
 
   it('classifies co-op from player count rather than game_mode', () => {

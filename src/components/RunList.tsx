@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
-import { CHARACTERS, type CardChange, type Pickup, type PotionChange, type RelicChange, type Run } from '../lib/types'
+import { runMode, runSource } from '../lib/runClassification'
+import { CHARACTERS, type CardChange, type Pickup, type PotionChange, type RelicChange, type Run, type RunMode, type RunSource } from '../lib/types'
 
 function ChangeHistory({ count, children }: { count: number; children: ReactNode }) {
   return count ? <details className="relic-history"><summary>View changes ({count})</summary><ol>{children}</ol></details> : null
@@ -56,13 +57,25 @@ function PotionCell({ run }: { run: Run }) {
 
 export function RunList({ runs, onDelete, onClear }: { runs: Run[]; onDelete: (id: string) => void; onClear: () => void }) {
   const [filter, setFilter] = useState('all')
-  const [modeFilter, setModeFilter] = useState('all')
-  const visible = [...runs].filter((run) => (filter === 'all' || run.character === filter) && (modeFilter === 'all' || (run.mode ?? 'unclassified') === modeFilter)).sort((a, b) => b.date.localeCompare(a.date))
+  const [modeFilter, setModeFilter] = useState<RunMode>('singleplayer')
+  const [sourceFilter, setSourceFilter] = useState<RunSource>('normal')
+  const visible = [...runs].filter((run) => runSource(run) === sourceFilter && runMode(run) === modeFilter && (modeFilter === 'multiplayer' || filter === 'all' || run.character === filter)).sort((a, b) => b.date.localeCompare(a.date))
+  const abandoned = visible.filter((run) => run.outcome === 'abandoned')
+  const abandonedByCharacter = CHARACTERS.map((character) => ({ character, runs: abandoned.filter((run) => run.character === character) }))
   function clearAll() {
     const label = `${runs.length} saved run${runs.length === 1 ? '' : 's'}`
     if (confirm(`Clear all ${label}? This cannot be undone. Your Steam history files will not be affected.`)) onClear()
   }
-  return <section className="panel"><div className="section-heading"><div><p className="eyebrow">Archive</p><h2>Run history</h2></div><div className="history-filters"><select aria-label="Filter by run type" value={modeFilter} onChange={(e) => setModeFilter(e.target.value)}><option value="all">All run types</option><option value="singleplayer">Singleplayer</option><option value="multiplayer">Multiplayer</option><option value="unclassified">Unclassified</option></select><select aria-label="Filter by character" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All characters</option>{CHARACTERS.map((name) => <option key={name}>{name}</option>)}</select>{runs.length > 0 ? <button className="clear-runs" type="button" onClick={clearAll}>Clear all runs</button> : null}</div></div>
-    {!visible.length ? <div className="no-data">No runs match this filter.</div> : <div className="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Character</th><th>Asc.</th><th>Outcome</th><th>Floor</th><th>Cards held · changes</th><th>Relics held · changes</th><th>Potions held · changes</th><th></th></tr></thead><tbody>{visible.map((run) => <tr key={run.id}><td>{run.date}</td><td><span className={`mode-badge ${run.mode ?? 'unclassified'}`}>{run.mode === 'singleplayer' ? 'Singleplayer' : run.mode === 'multiplayer' ? `Multiplayer · ${run.playerCount ?? '2+'} players` : 'Unclassified'}</span>{run.mode === 'multiplayer' ? <small className="history-note">Showing first player in file</small> : null}{run.mode === undefined ? <small className="history-note">Re-import to identify run type</small> : null}</td><td>{run.character}</td><td>A{run.ascension}</td><td><span className={`badge ${run.outcome}`}>{run.outcome}</span></td><td>{run.floor}</td><td><CardCell cards={run.cards} changes={run.cardChanges} legacyImport={run.id.startsWith('sts2:')} /></td><td><RelicCell relics={run.relics} changes={run.relicChanges} /></td><td><PotionCell run={run} /></td><td><button className="delete" onClick={() => { if (confirm('Delete this run?')) onDelete(run.id) }} aria-label={`Delete ${run.character} run from ${run.date}`}>Delete</button></td></tr>)}</tbody></table></div>}
+  return <section className="panel history-panel"><div className="section-heading"><div><p className="eyebrow">Archive</p><h2>Run history</h2></div><div className="history-filters">
+    <label>Save source<select aria-label="Filter by save source" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value as RunSource)}><option value="normal">Normal</option><option value="modded">Modded</option></select></label>
+    <label>Run type<select aria-label="Filter by run type" value={modeFilter} onChange={(e) => { const mode = e.target.value as RunMode; setModeFilter(mode); if (mode === 'multiplayer') setFilter('all') }}><option value="singleplayer">Singleplayer</option><option value="multiplayer">Multiplayer</option></select></label>
+    {modeFilter === 'singleplayer' ? <label>Character<select aria-label="Filter by character" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All characters</option>{CHARACTERS.map((name) => <option key={name}>{name}</option>)}</select></label> : null}
+    {runs.length > 0 ? <button className="clear-runs" type="button" onClick={clearAll}>Clear all runs</button> : null}
+  </div></div>
+    <section className="abandoned-section" aria-labelledby="abandoned-heading">
+      <div><h3 id="abandoned-heading">Abandoned runs by character</h3><p>{sourceFilter === 'normal' ? 'Normal' : 'Modded'} · {modeFilter === 'singleplayer' ? 'Singleplayer' : 'Multiplayer'}{modeFilter === 'multiplayer' ? ' · character is the first player recorded in the run file' : ''}</p></div>
+      <div className="abandoned-grid">{abandonedByCharacter.map(({ character, runs: characterRuns }) => <article key={character}><span>{character}</span><strong>{characterRuns.length}</strong><small>{characterRuns.length === 1 ? `Floor ${characterRuns[0].floor}` : characterRuns.length ? `Latest floor ${characterRuns[0].floor}` : 'No abandoned runs'}</small></article>)}</div>
+    </section>
+    {!visible.length ? <div className="no-data">No {sourceFilter} {modeFilter} runs match this filter.</div> : <div className="table-wrap"><table><thead><tr><th>Date</th><th>Source</th><th>Type</th><th>Character</th><th>Asc.</th><th>Outcome</th><th>Floor</th><th>Cards held · changes</th><th>Relics held · changes</th><th>Potions held · changes</th><th></th></tr></thead><tbody>{visible.map((run) => { const mode = runMode(run), source = runSource(run); return <tr key={run.id}><td>{run.date}</td><td><span className={`source-badge ${source}`}>{source === 'normal' ? 'Normal' : 'Modded'}</span></td><td><span className={`mode-badge ${mode}`}>{mode === 'singleplayer' ? 'Singleplayer' : `Multiplayer · ${run.playerCount ?? '2+'} players`}</span>{mode === 'multiplayer' ? <small className="history-note">Showing first player in file</small> : null}</td><td>{run.character}</td><td>A{run.ascension}</td><td><span className={`badge ${run.outcome}`}>{run.outcome}</span></td><td>{run.floor}</td><td><CardCell cards={run.cards} changes={run.cardChanges} legacyImport={run.id.startsWith('sts2:')} /></td><td><RelicCell relics={run.relics} changes={run.relicChanges} /></td><td><PotionCell run={run} /></td><td><button className="delete" onClick={() => { if (confirm('Delete this run?')) onDelete(run.id) }} aria-label={`Delete ${run.character} run from ${run.date}`}>Delete</button></td></tr> })}</tbody></table></div>}
   </section>
 }

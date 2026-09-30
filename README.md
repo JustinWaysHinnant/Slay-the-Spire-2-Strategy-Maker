@@ -8,6 +8,8 @@ Choose the `history` folder itself when connecting. The app rejects connecting t
 
 History shows the relics held at the end of each run and a collapsible floor-by-floor record of relic gains and removals. Re-import previously imported `.run` files to fill in their relic timelines; matching runs are enriched rather than duplicated. The manual run form also supports recording a relic exchange by entering the removed and gained relics on the same floor.
 
+Dashboard and History filters separate Normal from Modded saves and Singleplayer from Multiplayer runs. Character filtering appears for Singleplayer, while History includes an abandoned-run breakdown for every character in both run types. Older records without run-type metadata are treated as Singleplayer instead of appearing in a separate unclassified bucket.
+
 Card signals count each card a run owned at any point, including cards later removed or transformed. Each signal also shows removals among runs with recorded removal history. Imported runs use the game's card gain, removal, transformation, and final-deck records. Re-import older `.run` files to enrich existing runs without duplicates; until then, older saved runs fall back to their final decks. For manual runs, list removed cards separately beneath the final-card entries.
 
 ```text

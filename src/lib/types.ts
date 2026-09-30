@@ -3,6 +3,7 @@ export type Character = (typeof CHARACTERS)[number]
 export const OUTCOMES = ['win', 'loss', 'abandoned'] as const
 export type Outcome = (typeof OUTCOMES)[number]
 export type RunMode = 'singleplayer' | 'multiplayer'
+export type RunSource = 'normal' | 'modded'
 
 export interface Pickup { name: string; floor?: number; upgraded?: boolean; effects?: string[] }
 export interface RelicChange { floor: number; gained: string[]; removed: string[]; context?: string }
@@ -16,6 +17,7 @@ export interface Run {
   ascension: number
   outcome: Outcome
   floor: number
+  source?: RunSource
   mode?: RunMode
   playerCount?: number
   killedBy?: string

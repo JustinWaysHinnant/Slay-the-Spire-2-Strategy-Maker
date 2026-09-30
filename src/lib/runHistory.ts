@@ -1,6 +1,6 @@
-import { CHARACTERS, type CardChange, type Character, type Pickup, type PotionChange, type RelicChange, type Run } from './types'
+import { CHARACTERS, type CardChange, type Character, type Pickup, type PotionChange, type RelicChange, type Run, type RunSource } from './types'
 
-export type RunSource = 'normal' | 'modded'
+export type { RunSource } from './types'
 
 type JsonObject = Record<string, unknown>
 type PermissionMode = 'read'
@@ -219,6 +219,7 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource):
     ascension,
     outcome: value.was_abandoned === true ? 'abandoned' : value.win === true ? 'win' : 'loss',
     floor: points.length,
+    source,
     mode: players.length > 1 ? 'multiplayer' : 'singleplayer',
     playerCount: players.length,
     killedBy,
