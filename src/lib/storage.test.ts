@@ -15,6 +15,16 @@ describe('archives', () => {
   })
   it('rejects malformed archives', () => expect(() => parseArchive('{"version":1,"runs":[{}]}')).toThrow())
   it('keeps existing ids during merge', () => expect(mergeRuns([sample],[{...sample, outcome:'loss'}])[0].outcome).toBe('win'))
+  it('does not duplicate vanilla history copied into the modded profile', () => {
+    const normal = { ...sample, id: 'sts2:normal:1770000000', notes: 'Imported from normal run history.' }
+    const moddedCopy = { ...sample, id: 'sts2:modded:1770000000', notes: 'Imported from modded run history.' }
+    expect(mergeRuns([normal], [moddedCopy])).toEqual([normal])
+  })
+  it('keeps genuinely different normal and modded runs with the same filename', () => {
+    const normal = { ...sample, id: 'sts2:normal:1770000000' }
+    const modded = { ...sample, id: 'sts2:modded:1770000000', cards: [{ name: 'Modded Card', floor: 2 }] }
+    expect(mergeRuns([normal], [modded])).toEqual([normal, modded])
+  })
   it('enriches an existing run with relic history without duplicating or replacing its other fields', () => {
     const change = { floor: 12, removed: ['Old Relic'], gained: ['New Relic'], context: 'Relic Trader' }
     const merged = mergeRuns([sample], [{ ...sample, outcome: 'loss', relicChanges: [change] }])
@@ -50,12 +60,24 @@ describe('archives', () => {
     expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, potionChanges: [{ floor: 2, gained: [], used: [42], discarded: [] }] }] }))).toThrow()
   })
   it('enriches older imported runs with mode without replacing their data', () => {
-    const merged = mergeRuns([sample], [{ ...sample, mode: 'multiplayer', playerCount: 3, outcome: 'loss' }])
-    expect(merged[0]).toMatchObject({ mode: 'multiplayer', playerCount: 3, outcome: 'win' })
+    const merged = mergeRuns([sample], [{ ...sample, source: 'modded', mode: 'multiplayer', playerCount: 3, outcome: 'loss' }])
+    expect(merged[0]).toMatchObject({ source: 'modded', mode: 'multiplayer', playerCount: 3, outcome: 'win' })
     expect(parseArchive(JSON.stringify(toArchive(merged)))).toEqual(merged)
+  })
+  it('replaces legacy first-player multiplayer data with the signed-in Steam player on re-import', () => {
+    const old = { ...sample, id: 'sts2:normal:1770000000', mode: 'multiplayer' as const, playerCount: 2, character: 'Silent' as const, cards: [{ name: 'Friend Card' }], relics: [] }
+    const corrected = { ...old, character: 'Defect' as const, cards: [{ name: 'My Card' }], steamPlayerSelected: true as const }
+    expect(mergeRuns([old], [corrected])).toEqual([corrected])
   })
   it('rejects inconsistent run-type metadata', () => {
     expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, mode: 'multiplayer', playerCount: 1 }] }))).toThrow()
     expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, mode: 'singleplayer', playerCount: 2 }] }))).toThrow()
+  })
+  it('rejects invalid save-source metadata', () => {
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, source: 'unknown' }] }))).toThrow()
+  })
+  it('rejects invalid or singleplayer Steam-player selection metadata', () => {
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, mode: 'multiplayer', playerCount: 2, steamPlayerSelected: false }] }))).toThrow()
+    expect(() => parseArchive(JSON.stringify({ version: 1, runs: [{ ...sample, mode: 'singleplayer', playerCount: 1, steamPlayerSelected: true }] }))).toThrow()
   })
 })

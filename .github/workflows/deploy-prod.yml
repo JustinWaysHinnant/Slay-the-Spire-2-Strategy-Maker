@@ -17,7 +17,9 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
-        env: { VITE_BASE: / }
+        env:
+          VITE_BASE: /
+          VITE_STEAM_AUTH_API: "${{ vars.STEAM_AUTH_API }}"
       - name: Upload to Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:

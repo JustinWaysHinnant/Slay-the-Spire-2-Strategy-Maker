@@ -1,6 +1,6 @@
-import { CHARACTERS, type CardChange, type Character, type Pickup, type PotionChange, type RelicChange, type Run } from './types'
+import { CHARACTERS, type CardChange, type Character, type OfferedChoice, type Pickup, type PotionChange, type RelicChange, type Run, type RunNode, type RunSource } from './types'
 
-export type RunSource = 'normal' | 'modded'
+export type { RunSource } from './types'
 
 type JsonObject = Record<string, unknown>
 type PermissionMode = 'read'
@@ -9,11 +9,12 @@ export interface HistoryDirectoryHandle {
   kind: 'directory'
   name: string
   values(): AsyncIterableIterator<HistoryDirectoryHandle | HistoryFileHandle>
+  isSameEntry?(other: HistoryDirectoryHandle): Promise<boolean>
   queryPermission(options?: { mode?: PermissionMode }): Promise<PermissionState>
   requestPermission(options?: { mode?: PermissionMode }): Promise<PermissionState>
 }
 
-interface HistoryFileHandle {
+export interface HistoryFileHandle {
   kind: 'file'
   name: string
   getFile(): Promise<File>
@@ -28,6 +29,21 @@ const STORE_NAME = 'handles'
 
 const isObject = (value: unknown): value is JsonObject => typeof value === 'object' && value !== null && !Array.isArray(value)
 const objects = (value: unknown): JsonObject[] => Array.isArray(value) ? value.filter(isObject) : []
+
+class SteamPlayerNotFoundError extends Error {}
+
+function parseRunJson(text: string): unknown {
+  // SteamID64 values exceed JavaScript's safe integer range. Preserve the raw
+  // digits for both player records and per-floor player statistics.
+  const losslessPlayerIds = text.replace(/("(?:id|player_id)"\s*:\s*)(\d{16,20})(?=\s*[,}])/g, '$1"$2"')
+  return JSON.parse(losslessPlayerIds)
+}
+
+function samePlayerId(first: unknown, second: unknown) {
+  return (typeof first === 'string' || typeof first === 'number')
+    && (typeof second === 'string' || typeof second === 'number')
+    && String(first) === String(second)
+}
 
 function displayName(value: unknown) {
   if (typeof value !== 'string' || !value) return ''
@@ -71,7 +87,7 @@ function mapPoints(value: unknown) {
 }
 
 function playerStats(point: JsonObject, playerId: unknown) {
-  return objects(point.player_stats).find((item) => item.player_id === playerId) ?? objects(point.player_stats)[0]
+  return objects(point.player_stats).find((item) => samePlayerId(item.player_id, playerId))
 }
 
 function pointContext(point: JsonObject) {
@@ -80,6 +96,67 @@ function pointContext(point: JsonObject) {
 
 function itemNames(value: unknown) {
   return (Array.isArray(value) ? value : []).map((item) => displayName(isObject(item) ? item.id : item)).filter(Boolean)
+}
+
+function finiteNumber(value: unknown) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : undefined
+}
+
+function offeredChoices(value: unknown, item: (choice: JsonObject) => unknown, pickedKey = 'was_picked'): OfferedChoice[] | undefined {
+  const choices = objects(value).flatMap((choice) => {
+    const name = displayName(item(choice))
+    return name ? [{ name, picked: choice[pickedKey] === true }] : []
+  })
+  return choices.length ? choices : undefined
+}
+
+function runNodes(value: unknown, acts: string[], player: JsonObject): RunNode[] {
+  if (!Array.isArray(value)) return []
+  let floor = 0
+  const nodes: RunNode[] = []
+  for (const [actIndex, rawAct] of value.entries()) {
+    const points = Array.isArray(rawAct) ? rawAct.filter(isObject) : isObject(rawAct) ? [rawAct] : []
+    for (const point of points) {
+      floor += 1
+      const room = objects(point.rooms)[0]
+      const stats = playerStats(point, player.id)
+      const cardChoices = offeredChoices(stats?.card_choices, (choice) => isObject(choice.card) ? choice.card.id : choice.card)
+      const relicChoices = offeredChoices(stats?.relic_choices, (choice) => choice.choice)
+      const potionChoices = offeredChoices(stats?.potion_choices, (choice) => choice.choice)
+      const ancientChoices = offeredChoices(stats?.ancient_choice, (choice) => choice.TextKey, 'was_chosen')
+      const eventChoices = objects(stats?.event_choices).map((choice) => displayName(isObject(choice.title) ? choice.title.key : choice.title)).filter(Boolean)
+      const node: RunNode = {
+        floor,
+        act: actIndex + 1,
+        actName: acts[actIndex],
+        mapType: displayName(point.map_point_type) || undefined,
+        roomType: displayName(room?.room_type) || undefined,
+        context: displayName(room?.model_id) || pointContext(point),
+        encounter: ['monster', 'elite', 'boss'].includes(String(room?.room_type).toLowerCase()) ? displayName(room?.model_id) || undefined : undefined,
+        monsters: itemNames(room?.monster_ids),
+        turns: finiteNumber(room?.turns_taken),
+        currentHp: finiteNumber(stats?.current_hp),
+        maxHp: finiteNumber(stats?.max_hp),
+        currentGold: finiteNumber(stats?.current_gold),
+        damageTaken: finiteNumber(stats?.damage_taken),
+        healed: finiteNumber(stats?.hp_healed),
+        goldGained: finiteNumber(stats?.gold_gained),
+        goldSpent: finiteNumber(stats?.gold_spent),
+        goldLost: finiteNumber(stats?.gold_lost),
+        cardChoices,
+        relicChoices,
+        potionChoices,
+        ancientChoices,
+        restChoices: itemNames(stats?.rest_site_choices),
+        eventChoices,
+        potionsUsed: itemNames(stats?.potion_used),
+        potionsDiscarded: itemNames(stats?.potion_discarded),
+      }
+      nodes.push(Object.fromEntries(Object.entries(node).filter(([, field]) => field !== undefined && (!Array.isArray(field) || field.length))) as unknown as RunNode)
+    }
+  }
+  return nodes
 }
 
 function cardChangeHistory(points: JsonObject[], player: JsonObject, finalCards: Pickup[]): CardChange[] {
@@ -181,7 +258,7 @@ function relicChangeHistory(points: JsonObject[], player: JsonObject, finalRelic
 function potionHistory(points: JsonObject[], playerId: unknown, finalPotions: unknown) {
   const collected = new Set<string>()
   for (const point of points) {
-    const stats = objects(point.player_stats).find((item) => item.player_id === playerId) ?? objects(point.player_stats)[0]
+    const stats = playerStats(point, playerId)
     for (const choice of objects(stats?.potion_choices)) {
       if (choice.was_picked === true) {
         const name = displayName(choice.choice)
@@ -196,14 +273,18 @@ function potionHistory(points: JsonObject[], playerId: unknown, finalPotions: un
   return [...collected]
 }
 
-export function parseSts2Run(text: string, fileName: string, source: RunSource): Run {
-  const value: unknown = JSON.parse(text)
+export function parseSts2Run(text: string, fileName: string, source: RunSource, steamId?: string): Run {
+  const value = parseRunJson(text)
   if (!isObject(value)) throw new Error('Run file is not a JSON object.')
   const players = objects(value.players)
-  const player = players[0]
+  const player = players.length > 1
+    ? players.find((candidate) => samePlayerId(candidate.id, steamId))
+    : players[0]
+  if (players.length > 1 && !player) throw new SteamPlayerNotFoundError('Signed-in Steam player is not present in this multiplayer run.')
   if (!player) throw new Error('Run file has no player data.')
   const timestamp = Number(value.start_time ?? fileName.replace(/\.run$/i, ''))
   const points = mapPoints(value.map_point_history)
+  const acts = itemNames(value.acts)
   const ascension = Number(value.ascension)
   if (!Number.isInteger(ascension) || ascension < 0) throw new Error('Run file has an invalid ascension level.')
 
@@ -218,9 +299,17 @@ export function parseSts2Run(text: string, fileName: string, source: RunSource):
     ascension,
     outcome: value.was_abandoned === true ? 'abandoned' : value.win === true ? 'win' : 'loss',
     floor: points.length,
+    source,
     mode: players.length > 1 ? 'multiplayer' : 'singleplayer',
     playerCount: players.length,
+    steamPlayerSelected: players.length > 1 ? true : undefined,
     killedBy,
+    seed: typeof value.seed === 'string' ? value.seed : value.seed === undefined ? undefined : String(value.seed),
+    buildId: typeof value.build_id === 'string' ? value.build_id : undefined,
+    acts,
+    durationSeconds: finiteNumber(value.run_time),
+    gameMode: typeof value.game_mode === 'string' ? displayName(value.game_mode) : undefined,
+    nodes: runNodes(value.map_point_history, acts, player),
     cards,
     cardsEverOwned: cardEvents.everOwned,
     cardsRemovedDuringRun: cardEvents.removed,
@@ -238,37 +327,42 @@ export interface ScanResult {
   runs: Run[]
   files: number
   skipped: number
+  unmatched: number
 }
 
-export async function scanHistoryDirectory(directory: HistoryDirectoryHandle, source: RunSource): Promise<ScanResult> {
+export async function scanHistoryDirectory(directory: HistoryDirectoryHandle, source: RunSource, steamId: string): Promise<ScanResult> {
   const runs: Run[] = []
   let files = 0
   let skipped = 0
+  let unmatched = 0
   for await (const entry of directory.values()) {
     if (entry.kind !== 'file' || !entry.name.toLowerCase().endsWith('.run')) continue
     files += 1
     try {
       const file = await entry.getFile()
-      runs.push(parseSts2Run(await file.text(), entry.name, source))
-    } catch {
-      skipped += 1
+      runs.push(parseSts2Run(await file.text(), entry.name, source, steamId))
+    } catch (error) {
+      if (error instanceof SteamPlayerNotFoundError) unmatched += 1
+      else skipped += 1
     }
   }
-  return { runs, files, skipped }
+  return { runs, files, skipped, unmatched }
 }
 
-export async function scanSelectedFiles(files: FileList, source: RunSource): Promise<ScanResult> {
+export async function scanSelectedFiles(files: Iterable<File>, source: RunSource, steamId: string): Promise<ScanResult> {
   const runFiles = [...files].filter((file) => file.name.toLowerCase().endsWith('.run'))
   const runs: Run[] = []
   let skipped = 0
+  let unmatched = 0
   for (const file of runFiles) {
     try {
-      runs.push(parseSts2Run(await file.text(), file.name, source))
-    } catch {
-      skipped += 1
+      runs.push(parseSts2Run(await file.text(), file.name, source, steamId))
+    } catch (error) {
+      if (error instanceof SteamPlayerNotFoundError) unmatched += 1
+      else skipped += 1
     }
   }
-  return { runs, files: runFiles.length, skipped }
+  return { runs, files: runFiles.length, skipped, unmatched }
 }
 
 export const supportsDirectoryPicker = () => typeof (window as DirectoryPickerWindow).showDirectoryPicker === 'function'
@@ -276,9 +370,13 @@ export const supportsDirectoryPicker = () => typeof (window as DirectoryPickerWi
 export async function chooseHistoryDirectory(source: RunSource) {
   const picker = (window as DirectoryPickerWindow).showDirectoryPicker
   if (!picker) throw new Error('Folder syncing requires Chrome or Edge. Use the folder import fallback instead.')
-  const handle = await picker({ id: `spire2-${source}-history`, mode: 'read' })
-  await saveDirectoryHandle(source, handle)
-  return handle
+  return picker({ id: `spire2-${source}-history`, mode: 'read' })
+}
+
+export async function isSameDirectory(first?: HistoryDirectoryHandle, second?: HistoryDirectoryHandle) {
+  if (!first || !second) return false
+  if (first === second) return true
+  return first.isSameEntry ? first.isSameEntry(second) : false
 }
 
 function openDatabase() {
@@ -310,6 +408,17 @@ export async function loadDirectoryHandle(source: RunSource) {
   })
   database.close()
   return handle
+}
+
+export async function forgetDirectoryHandle(source: RunSource) {
+  const database = await openDatabase()
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(STORE_NAME, 'readwrite')
+    transaction.objectStore(STORE_NAME).delete(source)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error)
+  })
+  database.close()
 }
 
 export async function hasReadPermission(handle: HistoryDirectoryHandle, request = false) {

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { parseSts2Run } from './runHistory'
+import { isSameDirectory, parseSts2Run, type HistoryDirectoryHandle } from './runHistory'
 
 const rawRun = JSON.stringify({
   ascension: 4,
+  seed: 'TESTSEED',
+  build_id: 'v0.107.1',
+  run_time: 1800,
+  acts: ['ACT.OVERGROWTH'],
   start_time: 1770000000,
   win: false,
   was_abandoned: false,
@@ -15,12 +19,39 @@ const rawRun = JSON.stringify({
     potions: [],
   }],
   map_point_history: [[
-    { player_stats: [{ player_id: 1, potion_choices: [{ choice: 'POTION.WEAK_POTION', was_picked: true }] }] },
-    { player_stats: [{ player_id: 1 }] },
+    { map_point_type: 'monster', rooms: [{ room_type: 'monster', model_id: 'ENCOUNTER.SEAPUNK_WEAK', turns_taken: 4 }], player_stats: [{ player_id: 1, current_hp: 55, max_hp: 70, current_gold: 115, damage_taken: 9, gold_gained: 15, potion_choices: [{ choice: 'POTION.WEAK_POTION', was_picked: true }] }] },
+    { map_point_type: 'monster', rooms: [{ room_type: 'monster', model_id: 'ENCOUNTER.SLUDGE_SPINNER_WEAK', turns_taken: 5 }], player_stats: [{ player_id: 1, current_hp: 48, max_hp: 70, card_choices: [{ card: { id: 'CARD.WISP' }, was_picked: true }, { card: { id: 'CARD.DEFY' }, was_picked: false }] }] },
   ]],
 })
 
+const ownerSteamId = '76561198000000001'
+const friendSteamId = '76561198000000002'
+
+function multiplayerRun() {
+  const value = JSON.parse(rawRun)
+  value.players = [
+    { ...value.players[0], id: '__FRIEND__', character: 'CHARACTER.SILENT', deck: [{ id: 'CARD.BACKSTAB', floor_added_to_deck: 1 }], relics: [{ id: 'RELIC.RING_OF_THE_SNAKE', floor_added_to_deck: 1 }] },
+    { ...value.players[0], id: '__OWNER__', character: 'CHARACTER.DEFECT', deck: [{ id: 'CARD.ZAP', floor_added_to_deck: 1 }], relics: [{ id: 'RELIC.CRACKED_CORE', floor_added_to_deck: 1 }], potions: [{ id: 'POTION.FIRE_POTION' }] },
+  ]
+  value.map_point_history = [[{
+    player_stats: [
+      { player_id: '__FRIEND__', cards_gained: [{ id: 'CARD.DAGGER_THROW' }] },
+      { player_id: '__OWNER__', cards_gained: [{ id: 'CARD.BALL_LIGHTNING' }], potion_choices: [{ choice: 'POTION.FIRE_POTION', was_picked: true }] },
+    ],
+  }]]
+  return JSON.stringify(value)
+    .replaceAll('"__FRIEND__"', friendSteamId)
+    .replaceAll('"__OWNER__"', ownerSteamId)
+}
+
 describe('Slay the Spire 2 run parser', () => {
+  it('recognizes when normal and modded connections use the same directory', async () => {
+    const first = { isSameEntry: async (other: HistoryDirectoryHandle) => other === second } as HistoryDirectoryHandle
+    const second = {} as HistoryDirectoryHandle
+    expect(await isSameDirectory(first, second)).toBe(true)
+    expect(await isSameDirectory(first, {} as HistoryDirectoryHandle)).toBe(false)
+  })
+
   it('maps a normal run into the strategy model', () => {
     const run = parseSts2Run(rawRun, '1770000000.run', 'normal')
     expect(run).toMatchObject({
@@ -29,6 +60,7 @@ describe('Slay the Spire 2 run parser', () => {
       ascension: 4,
       outcome: 'loss',
       floor: 2,
+      source: 'normal',
       killedBy: 'Sludge Spinner Weak',
       cards: [{ name: 'Strike', floor: 1 }, { name: 'Wisp', floor: 3, upgraded: true }],
       relics: [{ name: 'Bone Tea', floor: 5 }],
@@ -36,19 +68,40 @@ describe('Slay the Spire 2 run parser', () => {
       finalPotions: [],
       mode: 'singleplayer',
       playerCount: 1,
+      seed: 'TESTSEED',
+      buildId: 'v0.107.1',
+      acts: ['Overgrowth'],
+      durationSeconds: 1800,
     })
+    expect(run.nodes?.[1]).toMatchObject({ floor: 2, act: 1, actName: 'Overgrowth', encounter: 'Sludge Spinner Weak', turns: 5, cardChoices: [{ name: 'Wisp', picked: true }, { name: 'Defy', picked: false }] })
   })
 
   it('keeps normal and modded imports distinct', () => {
-    expect(parseSts2Run(rawRun, '1770000000.run', 'modded').id).toBe('sts2:modded:1770000000')
+    expect(parseSts2Run(rawRun, '1770000000.run', 'modded')).toMatchObject({ id: 'sts2:modded:1770000000', source: 'modded' })
   })
 
   it('classifies co-op from player count rather than game_mode', () => {
-    const value = JSON.parse(rawRun)
-    value.game_mode = 'standard'
-    value.players.push({ ...value.players[0], id: 2, character: 'CHARACTER.SILENT' })
-    const run = parseSts2Run(JSON.stringify(value), '1770000000.run', 'normal')
-    expect(run).toMatchObject({ mode: 'multiplayer', playerCount: 2, character: 'Necrobinder' })
+    const run = parseSts2Run(multiplayerRun(), '1770000000.run', 'normal', ownerSteamId)
+    expect(run).toMatchObject({ mode: 'multiplayer', playerCount: 2, steamPlayerSelected: true })
+  })
+
+  it('uses only the signed-in Steam player throughout a multiplayer run', () => {
+    const run = parseSts2Run(multiplayerRun(), '1770000000.run', 'modded', ownerSteamId)
+    expect(run).toMatchObject({
+      source: 'modded',
+      character: 'Defect',
+      steamPlayerSelected: true,
+      cards: [{ name: 'Zap', floor: 1 }],
+      relics: [{ name: 'Cracked Core', floor: 1 }],
+      finalPotions: ['Fire Potion'],
+    })
+    expect(run.cardsEverOwned).toEqual(expect.arrayContaining(['Zap', 'Ball Lightning']))
+    expect(run.cardsEverOwned).not.toEqual(expect.arrayContaining(['Backstab', 'Dagger Throw']))
+    expect(run.potions).toEqual(['Fire Potion'])
+  })
+
+  it('never falls back to a friend when the signed-in Steam player is absent', () => {
+    expect(() => parseSts2Run(multiplayerRun(), '1770000000.run', 'normal', '76561198000000003')).toThrow(/Signed-in Steam player/)
   })
 
   it('keeps cards removed or transformed during the run in signal history', () => {

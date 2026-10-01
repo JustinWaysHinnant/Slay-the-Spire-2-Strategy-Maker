@@ -1,8 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Dashboard } from './components/Dashboard'
+import { Login } from './components/Login'
 import { RunForm } from './components/RunForm'
 import { RunList } from './components/RunList'
 import { RunSync } from './components/RunSync'
+import { appReturnUrl, SESSION_STORAGE_KEY, steamLoginUrl, takeSessionToken, verifySession, type AuthState } from './lib/auth'
 import { loadRuns, mergeRuns, parseArchive, saveRuns, toArchive } from './lib/storage'
 import type { RunSource, ScanResult } from './lib/runHistory'
 import type { Run } from './lib/types'
@@ -11,6 +13,50 @@ import './styles/card-editor.css'
 
 type Tab = 'dashboard' | 'log' | 'history'
 export default function App() {
+  const apiUrl = import.meta.env.VITE_STEAM_AUTH_API?.trim() ?? ''
+  const [auth, setAuth] = useState<AuthState>({ status: 'checking' })
+
+  useEffect(() => {
+    let active = true
+    async function restoreSession() {
+      const callbackToken = takeSessionToken(window.location.hash)
+      if (callbackToken) {
+        localStorage.setItem(SESSION_STORAGE_KEY, callbackToken)
+        history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+      }
+      const token = callbackToken ?? localStorage.getItem(SESSION_STORAGE_KEY)
+      if (!apiUrl || !token) {
+        if (active) setAuth({ status: 'signed-out' })
+        return
+      }
+      try {
+        const session = await verifySession(apiUrl, token)
+        if (!active) return
+        if (session) setAuth({ status: 'signed-in', session })
+        else {
+          localStorage.removeItem(SESSION_STORAGE_KEY)
+          setAuth({ status: 'signed-out', error: 'Your Steam session expired. Please sign in again.' })
+        }
+      } catch {
+        if (active) setAuth({ status: 'signed-out', error: 'The Steam login service is unavailable. Please try again.' })
+      }
+    }
+    void restoreSession()
+    return () => { active = false }
+  }, [apiUrl])
+
+  if (auth.status === 'checking') return <main className="login-shell"><div className="auth-loading" role="status">Checking Steam session…</div></main>
+  if (auth.status === 'signed-out') return <Login apiUrl={apiUrl} error={auth.error} onLogin={() => {
+    window.location.assign(steamLoginUrl(apiUrl, appReturnUrl(window.location, import.meta.env.BASE_URL)))
+  }} />
+
+  return <StrategyMaker steamId={auth.session.steamId} onLogout={() => {
+    localStorage.removeItem(SESSION_STORAGE_KEY)
+    setAuth({ status: 'signed-out' })
+  }} />
+}
+
+function StrategyMaker({ steamId, onLogout }: { steamId: string; onLogout: () => void }) {
   const [runs, setRuns] = useState<Run[]>(loadRuns), [tab, setTab] = useState<Tab>('dashboard'), [notice, setNotice] = useState('')
   const runsRef = useRef(runs)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -25,11 +71,12 @@ export default function App() {
     if (added || enriched) commit(next)
     if (announce || added || enriched) {
       const skipped = result.skipped ? ` ${result.skipped} unreadable file${result.skipped === 1 ? '' : 's'} skipped.` : ''
+      const unmatched = result.unmatched ? ` ${result.unmatched} multiplayer file${result.unmatched === 1 ? '' : 's'} did not include your SteamID and ${result.unmatched === 1 ? 'was' : 'were'} skipped.` : ''
       const updated = enriched ? ` ${enriched} existing run${enriched === 1 ? '' : 's'} gained new history details.` : ''
-      setNotice(`${source === 'normal' ? 'Normal' : 'Modded'} history: ${added} new run${added === 1 ? '' : 's'} imported from ${result.files} file${result.files === 1 ? '' : 's'}.${updated}${skipped}`)
+      setNotice(`${source === 'normal' ? 'Normal' : 'Modded'} history: ${added} new run${added === 1 ? '' : 's'} imported from ${result.files} file${result.files === 1 ? '' : 's'}.${updated}${unmatched}${skipped}`)
     }
   }
-  return <><header><div className="brand"><span className="brand-mark">Ⅱ</span><div><strong>SLAY THE SPIRE 2</strong><small>STRATEGY MAKER</small></div></div><nav>{(['dashboard','log','history'] as const).map((name) => <button className={tab === name ? 'active' : ''} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav><div className="actions"><button onClick={exportRuns}>Export</button><button onClick={() => fileRef.current?.click()}>Import</button><input ref={fileRef} hidden type="file" accept="application/json" onChange={(e) => void importRuns(e.target.files?.[0])}/></div></header>
-    <main><div className="hero"><div><p className="eyebrow">Personal intelligence</p><h1>{tab === 'dashboard' ? 'Know your climb.' : tab === 'log' ? 'Record the climb.' : 'Study the climb.'}</h1></div><p>Turn every ascent into evidence.</p></div>{notice && <button className="notice" onClick={() => setNotice('')}>{notice} <span>×</span></button>}{tab === 'dashboard' && <><RunSync onRuns={importHistory} onError={setNotice}/><Dashboard runs={runs}/></>} {tab === 'log' && <RunForm onAdd={(run) => { commit([...runs, run]); setTab('dashboard') }}/>} {tab === 'history' && <RunList runs={runs} onDelete={(id) => commit(runs.filter((run) => run.id !== id))}/>}</main>
+  return <><header><div className="brand"><span className="brand-mark">Ⅱ</span><div><strong>SLAY THE SPIRE 2</strong><small>STRATEGY MAKER</small></div></div><nav>{(['dashboard','log','history'] as const).map((name) => <button className={tab === name ? 'active' : ''} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav><div className="actions"><span className="steam-user" title={`SteamID64 ${steamId}`}>Steam · {steamId.slice(-6)}</span><button onClick={exportRuns}>Export</button><button onClick={() => fileRef.current?.click()}>Import</button><button onClick={onLogout}>Log out</button><input ref={fileRef} hidden type="file" accept="application/json" onChange={(e) => void importRuns(e.target.files?.[0])}/></div></header>
+    <main><div className="hero"><div><p className="eyebrow">Personal intelligence</p><h1>{tab === 'dashboard' ? 'Know your climb.' : tab === 'log' ? 'Record the climb.' : 'Study the climb.'}</h1></div><p>Turn every ascent into evidence.</p></div>{notice && <button className="notice" onClick={() => setNotice('')}>{notice} <span>×</span></button>}{tab === 'dashboard' && <><RunSync steamId={steamId} onRuns={importHistory} onError={setNotice}/><Dashboard runs={runs}/></>} {tab === 'log' && <RunForm onAdd={(run) => { commit([...runs, run]); setTab('dashboard') }}/>} {tab === 'history' && <RunList runs={runs} onDelete={(id) => commit(runs.filter((run) => run.id !== id))} onClear={() => { const count = runs.length; commit([]); setNotice(`Cleared ${count} saved run${count === 1 ? '' : 's'}. Your Steam history files were not changed.`) }}/>}</main>
     <footer>Local-first · your runs never leave this browser</footer></>
 }

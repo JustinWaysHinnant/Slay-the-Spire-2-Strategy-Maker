@@ -14,6 +14,8 @@ jobs:
         with: { node-version: 22, cache: pnpm, cache-dependency-path: pnpm-lock.yaml }
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
+        env:
+          VITE_STEAM_AUTH_API: "${{ vars.STEAM_AUTH_API }}"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }

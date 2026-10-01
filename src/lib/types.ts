@@ -3,11 +3,40 @@ export type Character = (typeof CHARACTERS)[number]
 export const OUTCOMES = ['win', 'loss', 'abandoned'] as const
 export type Outcome = (typeof OUTCOMES)[number]
 export type RunMode = 'singleplayer' | 'multiplayer'
+export type RunSource = 'normal' | 'modded'
 
 export interface Pickup { name: string; floor?: number; upgraded?: boolean; effects?: string[] }
 export interface RelicChange { floor: number; gained: string[]; removed: string[]; context?: string }
 export interface CardChange { floor: number; gained: string[]; removed: string[]; transformed: { from: string; to: string }[]; upgraded: string[]; context?: string }
 export interface PotionChange { floor: number; gained: string[]; used: string[]; discarded: string[]; context?: string }
+export interface OfferedChoice { name: string; picked: boolean }
+export interface RunNode {
+  floor: number
+  act: number
+  actName?: string
+  mapType?: string
+  roomType?: string
+  context?: string
+  encounter?: string
+  monsters?: string[]
+  turns?: number
+  currentHp?: number
+  maxHp?: number
+  currentGold?: number
+  damageTaken?: number
+  healed?: number
+  goldGained?: number
+  goldSpent?: number
+  goldLost?: number
+  cardChoices?: OfferedChoice[]
+  relicChoices?: OfferedChoice[]
+  potionChoices?: OfferedChoice[]
+  restChoices?: string[]
+  eventChoices?: string[]
+  ancientChoices?: OfferedChoice[]
+  potionsUsed?: string[]
+  potionsDiscarded?: string[]
+}
 
 export interface Run {
   id: string
@@ -16,9 +45,17 @@ export interface Run {
   ascension: number
   outcome: Outcome
   floor: number
+  source?: RunSource
   mode?: RunMode
   playerCount?: number
+  steamPlayerSelected?: true
   killedBy?: string
+  seed?: string
+  buildId?: string
+  acts?: string[]
+  durationSeconds?: number
+  gameMode?: string
+  nodes?: RunNode[]
   cards: Pickup[]
   cardsEverOwned?: string[]
   cardsRemovedDuringRun?: string[]
