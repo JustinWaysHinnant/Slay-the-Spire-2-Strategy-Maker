@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Dashboard } from './components/Dashboard'
+import { Dashboard, Statistics } from './components/Dashboard'
 import { Login } from './components/Login'
 import { RunForm } from './components/RunForm'
 import { RunList } from './components/RunList'
@@ -11,7 +11,7 @@ import type { Run } from './lib/types'
 import './styles/app.css'
 import './styles/card-editor.css'
 
-type Tab = 'dashboard' | 'log' | 'history'
+type Tab = 'dashboard' | 'statistics' | 'log' | 'history'
 export default function App() {
   const apiUrl = import.meta.env.VITE_STEAM_AUTH_API?.trim() ?? ''
   const [auth, setAuth] = useState<AuthState>({ status: 'checking' })
@@ -76,7 +76,8 @@ function StrategyMaker({ steamId, onLogout }: { steamId: string; onLogout: () =>
       setNotice(`${source === 'normal' ? 'Normal' : 'Modded'} history: ${added} new run${added === 1 ? '' : 's'} imported from ${result.files} file${result.files === 1 ? '' : 's'}.${updated}${unmatched}${skipped}`)
     }
   }
-  return <><header><div className="brand"><span className="brand-mark">Ⅱ</span><div><strong>SLAY THE SPIRE 2</strong><small>STRATEGY MAKER</small></div></div><nav>{(['dashboard','log','history'] as const).map((name) => <button className={tab === name ? 'active' : ''} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav><div className="actions"><span className="steam-user" title={`SteamID64 ${steamId}`}>Steam · {steamId.slice(-6)}</span><button onClick={exportRuns}>Export</button><button onClick={() => fileRef.current?.click()}>Import</button><button onClick={onLogout}>Log out</button><input ref={fileRef} hidden type="file" accept="application/json" onChange={(e) => void importRuns(e.target.files?.[0])}/></div></header>
-    <main><div className="hero"><div><p className="eyebrow">Personal intelligence</p><h1>{tab === 'dashboard' ? 'Know your climb.' : tab === 'log' ? 'Record the climb.' : 'Study the climb.'}</h1></div><p>Turn every ascent into evidence.</p></div>{notice && <button className="notice" onClick={() => setNotice('')}>{notice} <span>×</span></button>}{tab === 'dashboard' && <><RunSync steamId={steamId} onRuns={importHistory} onError={setNotice}/><Dashboard runs={runs}/></>} {tab === 'log' && <RunForm onAdd={(run) => { commit([...runs, run]); setTab('dashboard') }}/>} {tab === 'history' && <RunList runs={runs} onDelete={(id) => commit(runs.filter((run) => run.id !== id))} onClear={() => { const count = runs.length; commit([]); setNotice(`Cleared ${count} saved run${count === 1 ? '' : 's'}. Your Steam history files were not changed.`) }}/>}</main>
+  const heroTitle = tab === 'dashboard' ? 'Plan the next climb.' : tab === 'statistics' ? 'Know your climb.' : tab === 'log' ? 'Record the climb.' : 'Study the climb.'
+  return <><header><div className="brand"><span className="brand-mark">Ⅱ</span><div><strong>SLAY THE SPIRE 2</strong><small>STRATEGY MAKER</small></div></div><nav>{(['dashboard','statistics','log','history'] as const).map((name) => <button className={tab === name ? 'active' : ''} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav><div className="actions"><span className="steam-user" title={`SteamID64 ${steamId}`}>Steam · {steamId.slice(-6)}</span><button onClick={exportRuns}>Export</button><button onClick={() => fileRef.current?.click()}>Import</button><button onClick={onLogout}>Log out</button><input ref={fileRef} hidden type="file" accept="application/json" onChange={(e) => void importRuns(e.target.files?.[0])}/></div></header>
+    <main><div className="hero"><div><p className="eyebrow">Personal intelligence</p><h1>{heroTitle}</h1></div><p>Turn every ascent into evidence.</p></div>{notice && <button className="notice" onClick={() => setNotice('')}>{notice} <span>×</span></button>}{tab === 'dashboard' && <><RunSync steamId={steamId} onRuns={importHistory} onError={setNotice}/><Dashboard runs={runs} onNavigate={setTab}/></>} {tab === 'statistics' && <Statistics runs={runs}/>} {tab === 'log' && <RunForm onAdd={(run) => { commit([...runs, run]); setTab('dashboard') }}/>} {tab === 'history' && <RunList runs={runs} onDelete={(id) => commit(runs.filter((run) => run.id !== id))} onClear={() => { const count = runs.length; commit([]); setNotice(`Cleared ${count} saved run${count === 1 ? '' : 's'}. Your Steam history files were not changed.`) }}/>}</main>
     <footer>Local-first · your runs never leave this browser</footer></>
 }
