@@ -1,7 +1,8 @@
-name: Deploy Pages
+name: Deploy Dev (GitHub Pages)
 on:
   push: { branches: [main] }
 permissions: { contents: read, pages: write, id-token: write }
+concurrency: { group: deploy-dev, cancel-in-progress: true }
 jobs:
   deploy:
     environment: { name: github-pages, url: "${{ steps.deployment.outputs.page_url }}" }

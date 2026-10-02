@@ -5,3 +5,9 @@ workers_dev = true
 
 [vars]
 FRONTEND_URL = "https://justinwayshinnant.github.io/Slay-the-Spire-2-Strategy-Maker/"
+
+[env.production]
+name = "sts2-strategy-maker-auth-production"
+
+[env.production.vars]
+FRONTEND_URL = "https://sts2.dynamicacg.io/"

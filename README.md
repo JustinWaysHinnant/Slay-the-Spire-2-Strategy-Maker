@@ -39,6 +39,26 @@ Card entries support optional acquisition floors using `Card name @ floor`. The 
 
 The default Vite base is `/Slay-the-Spire-2-Strategy-Maker/`, matching the GitHub Pages repository path. Set `VITE_BASE=/` for root or custom-domain deployments.
 
+## Environments
+
+| Environment | URL | Deploys when |
+| --- | --- | --- |
+| Dev | https://justinwayshinnant.github.io/Slay-the-Spire-2-Strategy-Maker/ | Every push to `main` |
+| Prod | https://sts2.dynamicacg.io | A `v*` tag is pushed (or the workflow is run manually) |
+
+Test changes on dev first, then promote the same commit to prod by tagging it:
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+The prod workflow runs typecheck, tests, and a `VITE_BASE=/` build, then uploads `dist/` to Hostinger over FTPS. It needs a `production` environment with the `FTP_HOST`, `FTP_USER`, and `FTP_PASSWORD` secrets. The FTP account's root should be the subdomain's document root.
+
+For Steam sign-in on prod, deploy the Worker's production environment (see below) and set a `STEAM_AUTH_API` variable on the `production` GitHub environment to its origin. It overrides the repository-level variable that dev uses.
+
+Run data lives in browser storage per origin, so dev and prod keep separate data. Use JSON export/import to move data between them.
+
 ## Steam authentication service
 
 The serverless authentication gateway is in `worker/` and is configured for Cloudflare Workers. It verifies Steam's OpenID response directly with Steam before issuing an HMAC-signed session. `SESSION_SECRET` is a server-only Cloudflare secret and must be at least 32 random characters.
@@ -49,3 +69,10 @@ pnpm exec wrangler deploy --cwd worker
 ```
 
 Set the GitHub repository Actions variable `STEAM_AUTH_API` to the deployed Worker origin, such as `https://sts2-strategy-maker-auth.example.workers.dev`, then redeploy GitHub Pages. For local frontend development, set `VITE_STEAM_AUTH_API` in an ignored `.env.local` file. For local Worker development, store `SESSION_SECRET` in an ignored `worker/.dev.vars` file.
+
+The Worker only accepts sign-in returns to its `FRONTEND_URL`, so prod uses a separate deployment configured for `https://sts2.dynamicacg.io/`:
+
+```bash
+pnpm exec wrangler secret put SESSION_SECRET --cwd worker --env production
+pnpm exec wrangler deploy --cwd worker --env production
+```
