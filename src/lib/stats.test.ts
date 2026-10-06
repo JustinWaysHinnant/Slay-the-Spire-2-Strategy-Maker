@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bestCharacter, bootstrapMedianInterval, cardTimingStats, deathsByEnemy, encounterPressureStats, floorDistribution, formatRate, offeredDecisionStats, outcomeCounts, pickupStats, resourceMetrics, wilsonInterval, winRate, winRateByAscension, winRateTrend } from './stats'
+import { actEconomyStats, ancientChoiceStats, bestCharacter, bootstrapMedianInterval, campfireChoiceStats, cardTimingStats, deathsByEnemy, eliteEncounterStats, eliteRouteStats, encounterPressureStats, floorDistribution, formatRate, offeredDecisionStats, outcomeCounts, pickupStats, resourceMetrics, wilsonInterval, winRate, winRateByAscension, winRateTrend } from './stats'
 import type { Run } from './types'
 
 let sequence = 0
@@ -48,15 +48,89 @@ describe('other analytics', () => {
       run('win', { nodes: [{ floor: 1, act: 1, cardChoices: [{ name: 'Wisp', picked: true }] }, { floor: 2, act: 1, encounter: 'Slime', damageTaken: 2 }] }),
       run('loss', { nodes: [{ floor: 1, act: 1, cardChoices: [{ name: 'Wisp', picked: false }] }, { floor: 2, act: 1, encounter: 'Slime', damageTaken: 8 }] }),
     ]
-    expect(offeredDecisionStats(runs)[0]).toMatchObject({ name: 'Wisp', offered: 2, picked: 1, skipped: 1, nextFightHpDelta: 6 })
+    expect(offeredDecisionStats(runs)[0]).toMatchObject({
+      name: 'Wisp', offered: 2, picked: 1, skipped: 1,
+      pickedWins: 1, pickedCompleted: 1, pickedWinRate: 1,
+      skippedWins: 0, skippedCompleted: 1, winRateDelta: 100,
+      nextFightHpDelta: 6,
+    })
+  })
+  it('excludes abandoned card choices from outcome comparisons', () => {
+    const result = offeredDecisionStats([
+      run('win', { nodes: [{ floor: 1, act: 1, cardChoices: [{ name: 'Wisp', picked: true }] }] }),
+      run('abandoned', { nodes: [{ floor: 1, act: 1, cardChoices: [{ name: 'Wisp', picked: false }] }] }),
+    ])[0]
+    expect(result).toMatchObject({ pickedCompleted: 1, skippedCompleted: 0, winRateDelta: undefined })
   })
   it('measures encounter pressure per visit', () => {
-    const runs = [run('loss', { killedBy: 'Slime', nodes: [{ floor: 1, act: 1, encounter: 'Slime', damageTaken: 12, turns: 4, currentHp: 0 }] })]
-    expect(encounterPressureStats(runs)[0]).toMatchObject({ name: 'Slime', visits: 1, deaths: 1, medianHpLoss: 12, medianTurns: 4 })
+    const runs = [run('loss', { killedBy: 'Slime', nodes: [{ floor: 1, act: 1, encounter: 'Slime', damageTaken: 12, turns: 4, currentHp: 0, maxHp: 40, potionsUsed: ['Fire Potion'] }] })]
+    expect(encounterPressureStats(runs)[0]).toMatchObject({
+      name: 'Slime', visits: 1, deaths: 1, medianHpLoss: 12, medianHpLossPercent: .3,
+      hpPercentVisits: 1, highDamageVisits: 1, medianTurns: 4,
+      potionUseVisits: 1, potionTrackedVisits: 1, potionUseRate: 1,
+      runWins: 0, completedRuns: 1, runWinRate: 0,
+    })
+  })
+  it('deduplicates downstream encounter outcomes by run', () => {
+    const result = encounterPressureStats([
+      run('win', { nodes: [
+        { floor: 1, act: 1, encounter: 'Slime', damageTaken: 2 },
+        { floor: 2, act: 1, encounter: 'Slime', damageTaken: 3 },
+      ] }),
+      run('abandoned', { nodes: [{ floor: 1, act: 1, encounter: 'Slime', damageTaken: 1 }] }),
+    ])[0]
+    expect(result).toMatchObject({ visits: 3, runWins: 1, completedRuns: 1, runWinRate: 1 })
   })
   it('summarizes route resources per run', () => {
     const result = resourceMetrics([run('win', { nodes: [{ floor: 1, act: 1, roomType: 'Elite', damageTaken: 7, goldSpent: 20, potionsUsed: ['Fire Potion'] }] })])
     expect(result.find((item) => item.key === 'elites')?.median).toBe(1)
     expect(result.find((item) => item.key === 'potions')?.median).toBe(1)
+  })
+  it('summarizes survival and HP economy by act', () => {
+    const runs = [
+      run('win', { nodes: [
+        { floor: 1, act: 1, currentHp: 70, maxHp: 80, damageTaken: 8 },
+        { floor: 2, act: 1, currentHp: 62, maxHp: 80, healed: 5 },
+        { floor: 3, act: 2, currentHp: 60, maxHp: 80 },
+      ] }),
+      run('loss', { nodes: [{ floor: 1, act: 1, currentHp: 40, maxHp: 80, damageTaken: 20 }] }),
+    ]
+    expect(actEconomyStats(runs)[0]).toMatchObject({ act: 1, entrants: 2, completed: 1, completionRate: .5, medianEntryHp: 55, medianExitHp: 51, medianDamage: 14, medianHealing: 2.5 })
+  })
+  it('compares campfire choices by act completion', () => {
+    const runs = [
+      run('win', { nodes: [{ floor: 1, act: 1, restChoices: ['Rest'] }, { floor: 2, act: 2 }] }),
+      run('loss', { nodes: [{ floor: 1, act: 1, restChoices: ['Rest'] }] }),
+      run('win', { nodes: [{ floor: 1, act: 1, restChoices: ['Upgrade'] }, { floor: 2, act: 2 }] }),
+    ]
+    expect(campfireChoiceStats(runs)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ act: 1, name: 'Rest', choices: 2, runs: 2, completed: 1, completionRate: .5 }),
+      expect.objectContaining({ act: 1, name: 'Upgrade', choices: 1, runs: 1, completed: 1, completionRate: 1 }),
+    ]))
+  })
+  it('measures Elite danger, rewards, and downstream wins', () => {
+    const runs = [
+      run('win', { nodes: [{ floor: 3, act: 1, roomType: 'Elite', encounter: 'Guardian', damageTaken: 8, relicChoices: [{ name: 'Lantern', picked: true }] }] }),
+      run('loss', { nodes: [{ floor: 4, act: 1, roomType: 'Elite', encounter: 'Guardian', damageTaken: 24, currentHp: 0 }] }),
+    ]
+    expect(eliteEncounterStats(runs)[0]).toMatchObject({ name: 'Guardian', visits: 2, deaths: 1, deathRate: .5, medianDamage: 16, relicRewards: 1, rewardRate: .5, runWins: 1, completedRuns: 2, runWinRate: .5 })
+  })
+  it('compares run outcomes by Elite-route intensity', () => {
+    const elite = (floor: number) => ({ floor, act: 1, roomType: 'Elite', damageTaken: 10, relicChoices: [{ name: `Relic ${floor}`, picked: true }] })
+    const runs = [run('loss', { nodes: [{ floor: 1, act: 1 }] }), run('win', { nodes: [elite(2)] }), run('win', { nodes: [elite(2), elite(5)] })]
+    expect(eliteRouteStats(runs)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'none', runs: 1, wins: 0, medianEliteDamage: 0, medianRelicRewards: 0 }),
+      expect.objectContaining({ key: 'one', runs: 1, wins: 1, medianEliteDamage: 10, medianRelicRewards: 1 }),
+      expect.objectContaining({ key: 'multiple', runs: 1, wins: 1, medianEliteDamage: 20, medianRelicRewards: 2 }),
+    ]))
+  })
+  it('compares Ancient picks with skips, outcomes, and the next fight', () => {
+    const runs = [
+      run('win', { nodes: [{ floor: 1, act: 1, ancientChoices: [{ name: 'Ember', picked: true }, { name: 'Moon', picked: false }] }, { floor: 2, act: 1, encounter: 'Slime', damageTaken: 3 }] }),
+      run('loss', { nodes: [{ floor: 1, act: 1, ancientChoices: [{ name: 'Ember', picked: false }, { name: 'Moon', picked: true }] }, { floor: 2, act: 1, encounter: 'Slime', damageTaken: 11 }] }),
+    ]
+    expect(ancientChoiceStats(runs).find((item) => item.name === 'Ember')).toMatchObject({
+      offered: 2, picked: 1, skipped: 1, pickRate: .5, pickedWins: 1, pickedCompleted: 1, skippedWins: 0, skippedCompleted: 1, winRateDelta: 100, nextFightHpDelta: 8,
+    })
   })
 })

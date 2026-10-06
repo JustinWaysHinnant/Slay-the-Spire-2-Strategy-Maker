@@ -127,6 +127,18 @@
 .dashboard-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
 .dashboard-filters label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .dashboard-filters select { min-width: 150px; }
+.character-scope { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 20px; padding: 14px 20px; margin-bottom: 16px; }
+.character-scope > div:first-child { min-width: 150px; }
+.character-scope strong, .character-scope small { display: block; }
+.character-scope strong { font: 600 15px 'Space Grotesk'; }
+.character-scope > div:first-child small { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.character-tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: #19161f; }
+.character-tabs button { min-width: 0; padding: 8px 7px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); text-align: left; }
+.character-tabs button span { display: block; overflow: hidden; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.character-tabs button small { margin-top: 2px; color: #777080; font-size: 10px; }
+.character-tabs button:hover { background: #2b2632; color: #fff; }
+.character-tabs button.active { background: #45333c; color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.22); }
+.character-tabs button.active small { color: #f0ad8f; }
 .mode-caveat { margin: 0 0 16px; }
 .history-panel { padding: 22px; }
 .history-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
@@ -160,6 +172,9 @@
 
   .relic-change-editor { grid-template-columns: 1fr; }
   .mode-filter { align-items: stretch; flex-direction: column; }
+  .character-scope { grid-template-columns: 1fr; }
+  .character-tabs { display: flex; overflow-x: auto; }
+  .character-tabs button { flex: 0 0 116px; }
   .mode-options button { flex: 1; }
   .abandoned-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
