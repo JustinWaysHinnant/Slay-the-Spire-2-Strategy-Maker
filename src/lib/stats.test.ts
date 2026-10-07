@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actEconomyStats, ancientChoiceStats, bestCharacter, bootstrapMedianInterval, campfireChoiceStats, cardTimingStats, deathsByEnemy, eliteEncounterStats, eliteRouteStats, encounterPressureStats, floorDistribution, formatRate, offeredDecisionStats, outcomeCounts, pickupStats, resourceMetrics, wilsonInterval, winRate, winRateByAscension, winRateTrend } from './stats'
+import { actEconomyStats, ancientChoiceStats, bestCharacter, bootstrapMedianInterval, campfireChoiceStats, cardTimingStats, deathsByEnemy, deckConstructionStats, eliteEncounterStats, eliteRouteStats, encounterPressureStats, floorDistribution, formatRate, offeredDecisionStats, outcomeCounts, personalRecordStats, pickupStats, progressWindowStats, resourceMetrics, routeOutcomeStats, wilsonInterval, winRate, winRateByAscension, winRateTrend } from './stats'
 import type { Run } from './types'
 
 let sequence = 0
@@ -81,10 +81,79 @@ describe('other analytics', () => {
     ])[0]
     expect(result).toMatchObject({ visits: 3, runWins: 1, completedRuns: 1, runWinRate: 1 })
   })
+  it('groups completed runs by deck size, removals, and upgrades', () => {
+    const result = deckConstructionStats([
+      run('win', { cards: Array.from({ length: 14 }, (_, index) => ({ name: `Card ${index}` })), cardChanges: [{ floor: 2, gained: [], removed: ['Strike'], transformed: [], upgraded: ['Wisp'] }] }),
+      run('loss', { cards: Array.from({ length: 27 }, (_, index) => ({ name: `Large ${index}` })), cardsRemovedDuringRun: [], cardChanges: undefined }),
+      run('abandoned', { cards: Array.from({ length: 14 }, (_, index) => ({ name: `Ignored ${index}` })) }),
+    ])
+    expect(result.deckSize).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: '15-or-less', runs: 1, wins: 1, winRate: 1 }),
+      expect.objectContaining({ key: '26-plus', runs: 1, wins: 0, winRate: 0 }),
+    ]))
+    expect(result.removals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: '0', runs: 1 }),
+      expect.objectContaining({ key: '1', runs: 1 }),
+    ]))
+    expect(result.upgrades).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: '0', runs: 1 }),
+      expect.objectContaining({ key: '1-2', runs: 1 }),
+    ]))
+  })
+  it('normalizes route choices before comparing winning and losing runs', () => {
+    const result = routeOutcomeStats([
+      run('win', { nodes: [
+        { floor: 1, act: 1, roomType: 'Elite' }, { floor: 2, act: 1, roomType: 'Elite' },
+        { floor: 3, act: 1, roomType: 'Monster' }, { floor: 4, act: 1, roomType: 'Monster' },
+      ] }),
+      run('loss', { nodes: Array.from({ length: 4 }, (_, index) => ({ floor: index + 1, act: 1, roomType: 'Monster' })) }),
+    ]).find((item) => item.name === 'Elite')
+    expect(result).toMatchObject({ visits: 2, archiveShare: .25, runsWithVisit: 1, completedRuns: 2, winningMedianShare: .5, losingMedianShare: 0, outcomeShareDelta: 50 })
+  })
+  it('compares recent completed runs with the preceding window', () => {
+    const result = progressWindowStats([
+      run('loss', { date: '2026-01-01', floor: 10, durationSeconds: 600, nodes: [{ floor: 1, act: 1, damageTaken: 20 }] }),
+      run('loss', { date: '2026-01-02', floor: 20, durationSeconds: 1200, nodes: [{ floor: 1, act: 1, damageTaken: 30 }] }),
+      run('win', { date: '2026-01-03', floor: 40, durationSeconds: 2400, nodes: [{ floor: 1, act: 1, damageTaken: 10 }] }),
+      run('win', { date: '2026-01-04', floor: 50, durationSeconds: 3000, nodes: [{ floor: 1, act: 1, damageTaken: 12 }] }),
+      run('abandoned', { date: '2026-01-05', floor: 1 }),
+    ], 2)
+    expect(result).toMatchObject({ windowSize: 2, recentRuns: 2, previousRuns: 2 })
+    expect(result.comparisons.find((item) => item.key === 'win-rate')).toMatchObject({ recent: 100, previous: 0, delta: 100 })
+    expect(result.comparisons.find((item) => item.key === 'final-floor')).toMatchObject({ recent: 45, previous: 15, delta: 30 })
+    expect(result.comparisons.find((item) => item.key === 'damage')).toMatchObject({ recent: 11, previous: 25, delta: -14 })
+  })
+  it('tracks streaks, boss reaches, score, character bests, and patch records', () => {
+    const result = personalRecordStats([
+      run('win', { id: '1', date: '2026-01-01', character: 'Ironclad', ascension: 1, buildId: 'v1', score: 500, nodes: [{ floor: 1, act: 1, roomType: 'Boss' }] }),
+      run('win', { id: '2', date: '2026-01-02', character: 'Silent', ascension: 3, buildId: 'v1', score: 900, nodes: [{ floor: 1, act: 1, roomType: 'Boss' }] }),
+      run('loss', { id: '3', date: '2026-01-03', character: 'Silent', ascension: 4, buildId: 'v2', score: 700, nodes: [{ floor: 1, act: 1, roomType: 'Monster' }] }),
+      run('win', { id: '4', date: '2026-01-04', character: 'Silent', ascension: 5, buildId: 'v2', score: 1200, nodes: [{ floor: 1, act: 1, roomType: 'Boss' }] }),
+      run('abandoned', { id: '5', date: '2026-01-05', buildId: 'v2' }),
+    ])
+    expect(result).toMatchObject({
+      completedRuns: 4, currentWinStreak: 1, longestWinStreak: 2,
+      currentBossReachStreak: 1, longestBossReachStreak: 2, bossReachRuns: 4,
+      scoredRuns: 4, bestScoreRun: { id: '4', score: 1200 },
+    })
+    expect(result.bestAscensionByCharacter).toEqual(expect.arrayContaining([
+      expect.objectContaining({ character: 'Ironclad', ascension: 1 }),
+      expect.objectContaining({ character: 'Silent', ascension: 5 }),
+    ]))
+    expect(result.patchRecords).toEqual(expect.arrayContaining([
+      expect.objectContaining({ patch: 'v1', runs: 2, wins: 2, longestWinStreak: 2, bestAscensionWin: 3, bestScore: 900 }),
+      expect.objectContaining({ patch: 'v2', runs: 2, wins: 1, longestWinStreak: 1, bestAscensionWin: 5, bestScore: 1200 }),
+    ]))
+  })
   it('summarizes route resources per run', () => {
-    const result = resourceMetrics([run('win', { nodes: [{ floor: 1, act: 1, roomType: 'Elite', damageTaken: 7, goldSpent: 20, potionsUsed: ['Fire Potion'] }] })])
-    expect(result.find((item) => item.key === 'elites')?.median).toBe(1)
-    expect(result.find((item) => item.key === 'potions')?.median).toBe(1)
+    const result = resourceMetrics([
+      run('win', { nodes: [{ floor: 1, act: 1, roomType: 'Elite', damageTaken: 7, healed: 3, goldGained: 40, goldSpent: 20, potionsUsed: ['Fire Potion'] }] }),
+      run('loss', { nodes: [{ floor: 1, act: 1, roomType: 'Monster', damageTaken: 17, goldGained: 10 }] }),
+    ])
+    expect(result.find((item) => item.key === 'elites')?.median).toBe(.5)
+    expect(result.find((item) => item.key === 'potions')?.median).toBe(.5)
+    expect(result.find((item) => item.key === 'hp')).toMatchObject({ winningMedian: 7, losingMedian: 17, outcomeDelta: -10, winningRuns: 1, losingRuns: 1 })
+    expect(result.find((item) => item.key === 'gold-gained')).toMatchObject({ winningMedian: 40, losingMedian: 10, outcomeDelta: 30 })
   })
   it('summarizes survival and HP economy by act', () => {
     const runs = [

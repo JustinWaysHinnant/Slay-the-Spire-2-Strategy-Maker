@@ -6,6 +6,7 @@ const rawRun = JSON.stringify({
   seed: 'TESTSEED',
   build_id: 'v0.107.1',
   run_time: 1800,
+  score: 1234,
   acts: ['ACT.OVERGROWTH'],
   start_time: 1770000000,
   win: false,
@@ -72,6 +73,8 @@ describe('Slay the Spire 2 run parser', () => {
       buildId: 'v0.107.1',
       acts: ['Overgrowth'],
       durationSeconds: 1800,
+      startTime: 1770000000,
+      score: 1234,
     })
     expect(run.nodes?.[1]).toMatchObject({ floor: 2, act: 1, actName: 'Overgrowth', encounter: 'Sludge Spinner Weak', turns: 5, cardChoices: [{ name: 'Wisp', picked: true }, { name: 'Defy', picked: false }] })
   })

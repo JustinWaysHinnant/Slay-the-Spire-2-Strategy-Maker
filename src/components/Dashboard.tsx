@@ -1,13 +1,13 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { runMode, runSource } from '../lib/runClassification'
-import { actEconomyStats, ancientChoiceStats, bootstrapMedianInterval, campfireChoiceStats, cardTimingStats, deathsByEnemy, eliteEncounterStats, eliteRouteStats, encounterPressureStats, floorDistribution, formatRate, median, offeredDecisionStats, pickupStats, resourceMetrics, wilsonInterval, winRate, winRateByAscension, winRateByCharacter, winRateTrend } from '../lib/stats'
+import { actEconomyStats, ancientChoiceStats, bootstrapMedianInterval, campfireChoiceStats, cardTimingStats, deathsByEnemy, deckConstructionStats, eliteEncounterStats, eliteRouteStats, encounterPressureStats, floorDistribution, formatRate, median, offeredDecisionStats, personalRecordStats, pickupStats, progressWindowStats, resourceMetrics, routeOutcomeStats, wilsonInterval, winRate, winRateByAscension, winRateByCharacter, winRateTrend } from '../lib/stats'
 import { CHARACTERS, type Run, type RunMode, type RunSource } from '../lib/types'
 
 const pct = (value: number) => `${Math.round(value * 100)}%`
 const number = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(1)
 const interval = (low: number, high: number, suffix = '') => `${number(low)}–${number(high)}${suffix}`
 const signedInterval = (low: number, high: number, suffix = '') => `${low > 0 ? '+' : ''}${number(low)} to ${high > 0 ? '+' : ''}${number(high)}${suffix}`
-type AnalysisTab = 'performance' | 'health' | 'elites' | 'ancients' | 'decisions' | 'encounters' | 'deck' | 'routing' | 'resources'
+type AnalysisTab = 'performance' | 'health' | 'elites' | 'ancients' | 'decisions' | 'encounters' | 'deck' | 'routing' | 'resources' | 'trends' | 'records'
 
 const preferenceLabel = (rate: number) => rate >= .67 ? 'Usually picked' : rate <= .33 ? 'Usually skipped' : 'Mixed choice'
 const impactLabel = (low?: number, high?: number) => {
@@ -110,17 +110,13 @@ function DashboardContent({ runs, act, patchLabel }: { runs: Run[]; act?: number
   const cardSignals = useMemo(() => pickupStats(runs, 'cards', 3), [runs])
   const relicSignals = useMemo(() => pickupStats(runs, 'relics', 3), [runs])
   const timing = useMemo(() => cardTimingStats(runs), [runs])
+  const deckConstruction = useMemo(() => deckConstructionStats(runs), [runs])
+  const routes = useMemo(() => routeOutcomeStats(runs, act), [runs, act])
+  const progress = useMemo(() => progressWindowStats(runs, 10, act), [runs, act])
+  const records = useMemo(() => personalRecordStats(runs), [runs])
   const floorBands = useMemo(() => floorDistribution(runs), [runs])
   const deaths = useMemo(() => deathsByEnemy(runs), [runs])
   const trend = useMemo(() => winRateTrend(runs), [runs])
-  const roomCounts = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const run of runs) for (const node of run.nodes ?? []) if (act === undefined || node.act === act) {
-      const room = node.roomType ?? node.mapType ?? 'Unknown'
-      counts.set(room, (counts.get(room) ?? 0) + 1)
-    }
-    return [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
-  }, [runs, act])
   const duration = runs.flatMap((run) => run.durationSeconds === undefined ? [] : [run.durationSeconds / 60])
   const durationCi = bootstrapMedianInterval(duration)
   const scope = `${runs.length} filtered runs · patch ${patchLabel}`
@@ -137,7 +133,7 @@ function DashboardContent({ runs, act, patchLabel }: { runs: Run[]; act?: number
     </section>
 
     <div className="analysis-tabs" role="tablist" aria-label="Statistics view">{([
-      ['performance', 'Performance'], ['health', 'Act & HP'], ['elites', 'Elite routes'], ['ancients', 'Ancient choices'], ['decisions', 'Card choices'], ['encounters', 'Difficult fights'], ['deck', 'Deck signals'], ['routing', 'Paths taken'], ['resources', 'Resources'],
+      ['performance', 'Performance'], ['health', 'Act & HP'], ['elites', 'Elite routes'], ['ancients', 'Ancient choices'], ['decisions', 'Card choices'], ['encounters', 'Difficult fights'], ['deck', 'Deck signals'], ['routing', 'Paths taken'], ['resources', 'Resources'], ['trends', 'Progress trends'], ['records', 'Personal records'],
     ] as [AnalysisTab, string][]).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={analysisTab === value} className={analysisTab === value ? 'active' : ''} onClick={() => setAnalysisTab(value)}>{label}</button>)}</div>
     <div className="analysis-grid compact">
       {analysisTab === 'performance' ? <Analysis title="Performance" subtitle={`Where results improve—and where runs stop · ${scope}`} wide>
@@ -177,8 +173,15 @@ function DashboardContent({ runs, act, patchLabel }: { runs: Run[]; act?: number
         {encounters.length ? <><div className="table-wrap"><table className="analytics-table encounter-table"><thead><tr><th>Fight</th><th>Lethality <Info text="Deaths divided by recorded visits. This accounts for how often the fight was reached." /></th><th>Health burden <Info text="Typical recorded damage in HP and as a share of maximum HP. A heavy hit is at least 25% of maximum HP." /></th><th>Fight cost <Info text="Typical turns plus the share of tracked visits where at least one potion was used." /></th><th>Run result after reaching it <Info text="Final outcome of distinct completed runs that reached this fight. Repeated visits in one run count once here." /></th></tr></thead><tbody>{visibleEncounters.map((item) => <tr key={item.name}><td><strong>{item.name}</strong><small>{item.visits} recorded visit{item.visits === 1 ? '' : 's'}</small></td><td><strong className={item.deathRate >= .5 ? 'negative' : ''}>{formatRate(item.deathRate)} deaths</strong><small>{item.deaths} of {item.visits} visits</small><small>Possible rate: {pct(item.deathRateInterval.low)}–{pct(item.deathRateInterval.high)}</small></td><td><strong>{item.medianHpLoss === undefined ? 'Not recorded' : `${number(item.medianHpLoss)} HP`}</strong><small>{item.hpLossInterval ? `Likely typical range: ${interval(item.hpLossInterval.low, item.hpLossInterval.high, ' HP')}` : 'No HP-loss range available'}</small>{item.medianHpLossPercent === undefined ? <small>No maximum-HP comparison</small> : <><small>{pct(item.medianHpLossPercent)} of max HP typically</small><small>{item.highDamageVisits} of {item.hpPercentVisits} visits cost at least 25%</small></>}</td><td><strong>{item.medianTurns === undefined ? 'Turns not recorded' : `${number(item.medianTurns)} turns`}</strong><small>{item.turnsInterval ? `Likely typical range: ${interval(item.turnsInterval.low, item.turnsInterval.high, ' turns')}` : 'No turn range available'}</small><small>{item.potionUseRate === undefined ? 'Potion use not recorded' : `${formatRate(item.potionUseRate)} used a potion · ${item.potionUseVisits} of ${item.potionTrackedVisits}`}</small>{item.potionUseInterval ? <small>Possible potion-use rate: {pct(item.potionUseInterval.low)}–{pct(item.potionUseInterval.high)}</small> : null}</td><td><strong>{item.runWinRate === undefined ? 'No completed runs' : `${formatRate(item.runWinRate)} wins`}</strong><small>{item.runWins} of {item.completedRuns} completed runs</small>{item.runWinInterval ? <small>Possible rate: {pct(item.runWinInterval.low)}–{pct(item.runWinInterval.high)}</small> : null}</td></tr>)}</tbody></table></div><ShowAll expanded={showAllEncounters} total={encounters.length} shown={visibleEncounters.length} onClick={() => setShowAllEncounters((value) => !value)} /></> : <NoData>No encounter-level records exist in this scope.</NoData>}
       </Analysis> : null}
 
-      {analysisTab === 'deck' ? <Analysis title="Deck signals" subtitle={`Cards, relics, and timing associated with your results · ${scope}`} wide>
-        <SectionHelp><strong>These are associations, not tier lists.</strong> A positive lift means your win rate was higher in runs containing that item than your overall rate. Strong runs, character pools, rarity, and when an item appeared can all influence the result.</SectionHelp>
+      {analysisTab === 'deck' ? <Analysis title="Deck construction" subtitle={`Size, refinement, cards, relics, and timing associated with your results · ${scope}`} wide>
+        <SectionHelp><strong>These are associations, not build rules or tier lists.</strong> Final decks from winning runs naturally survive longer and have more chances to add, remove, and upgrade cards. Compare similar character, Ascension, Act, and patch scopes, and treat small groups or wide ranges as questions to review—not proof that a deck size or item caused the result.</SectionHelp>
+        <div className="subsection-heading first"><h3>Final deck shape</h3><p>Completed-run outcomes grouped by the deck recorded when each run ended.</p></div>
+        <div className="deck-construction-grid">
+          <DeckConstructionColumn title="Deck size" groups={deckConstruction.deckSize} empty="No completed deck records." />
+          <DeckConstructionColumn title="Card removals" groups={deckConstruction.removals} empty="No removal history recorded." />
+          <DeckConstructionColumn title="Upgrade events" groups={deckConstruction.upgrades} empty="No completed deck records." />
+        </div>
+        <div className="subsection-heading"><h3>Cards, relics, and timing</h3><p>Which recorded ingredients appeared in stronger or weaker runs.</p></div>
         <div className="strategy-columns deck-columns">
           <div><h3>Cards linked with stronger results</h3>{cardSignals.length ? <div className="rank-list">{cardSignals.slice(0,8).map((item) => <div key={item.name}><span>{item.name}<small>{item.wins}/{item.runs} wins</small></span><strong className={item.lift >= 0 ? 'positive' : 'negative'}>{item.lift >= 0 ? '+' : ''}{number(item.lift)} pts</strong></div>)}</div> : <NoData>Need at least 3 completed runs with the same card.</NoData>}</div>
           <div><h3>Relics linked with stronger results</h3>{relicSignals.length ? <div className="rank-list">{relicSignals.slice(0,8).map((item) => <div key={item.name}><span>{item.name}<small>{item.wins}/{item.runs} wins</small></span><strong className={item.lift >= 0 ? 'positive' : 'negative'}>{item.lift >= 0 ? '+' : ''}{number(item.lift)} pts</strong></div>)}</div> : <NoData>Need at least 3 completed runs with the same relic.</NoData>}</div>
@@ -186,14 +189,34 @@ function DashboardContent({ runs, act, patchLabel }: { runs: Run[]; act?: number
         </div>
       </Analysis> : null}
 
-      {analysisTab === 'routing' ? <Analysis title="Paths taken" subtitle={`Where your routes went · ${scope}`} wide>
-        <SectionHelp>This counts every recorded map location you visited. Compare elite, shop, and rest-site shares to see whether your routes tend to be aggressive, economic, or defensive. It describes your routing behavior; it does not decide which route was best.</SectionHelp>
-        {roomCounts.length ? <div className="compact-list dense">{roomCounts.map((room) => { const total = roomCounts.reduce((sum, item) => sum + item.count, 0); return <div key={room.name}><span>{room.name} <Info text={`How often ${room.name} appeared among all recorded map locations in the current filters.`} /></span><strong>{room.count} visits</strong><small>{pct(room.count / total)} of {total} recorded locations</small></div> })}</div> : <NoData>No route history recorded.</NoData>}
+      {analysisTab === 'routing' ? <Analysis title="Route composition" subtitle={`How winning and losing paths allocated their rooms · ${scope}`} wide>
+        <SectionHelp><strong>Each run is normalized before comparison.</strong> A room type's share is its visits divided by all recorded rooms in that run, preventing longer winning runs from automatically appearing to take more of everything. Differences still show association rather than causation: strong decks can safely choose routes that weak decks cannot.</SectionHelp>
+        {routes.length ? <div className="table-wrap"><table className="analytics-table route-table"><thead><tr><th>Room type</th><th>Archive presence <Info text="Raw visits, share of all recorded rooms, and completed runs containing at least one visit." /></th><th>Typical route share <Info text="The median share of a completed run's recorded route assigned to this room type." /></th><th>Winning vs losing routes <Info text="Difference between the typical route share in winning and losing runs. Positive values mean winners devoted more of their route to this room type." /></th></tr></thead><tbody>{routes.map((item) => <tr key={item.name}><td><strong>{item.name}</strong></td><td><strong>{item.visits} visits · {pct(item.archiveShare)}</strong><small>Appeared in {item.runsWithVisit} of {item.completedRuns} completed runs</small></td><td><strong>{pct(item.medianRunShare)}</strong><small>Likely typical range: {pct(item.runShareInterval.low)}–{pct(item.runShareInterval.high)}</small></td><td>{item.outcomeShareDelta === undefined ? <strong>Needs wins and losses</strong> : <><strong className={item.outcomeShareDelta > 0 ? 'positive' : item.outcomeShareDelta < 0 ? 'negative' : ''}>{item.outcomeShareDelta > 0 ? '+' : ''}{number(item.outcomeShareDelta)} points in winning routes</strong><small>Winners {pct(item.winningMedianShare!)} · losses {pct(item.losingMedianShare!)}</small><small>Possible difference: {signedInterval(item.outcomeShareDeltaInterval!.low, item.outcomeShareDeltaInterval!.high, ' points')}</small></>}<small>Compared {item.winningRuns} winning with {item.losingRuns} losing runs</small></td></tr>)}</tbody></table></div> : <NoData>No completed route history exists in this scope.</NoData>}
       </Analysis> : null}
 
-      {analysisTab === 'resources' ? <Analysis title="Resources" subtitle={`What a typical run spent, gained, or risked · ${scope}`} wide>
-        <SectionHelp>Each large number is the typical result per run. “Typical” is the middle result rather than an average, so one extreme run cannot distort it as much. The likely range tells you how stable that typical result is.</SectionHelp>
-        {resources.length ? <div className="compact-list dense">{resources.map((metric) => <div key={metric.key}><span>{metric.label} <Info text={metric.description} /></span><strong>Typically {number(metric.median)}</strong><small>Likely typical range: {interval(metric.interval.low, metric.interval.high)} <Info text="This 95% bootstrap range shows uncertainty around the typical, or median, per-run value." /></small><small>Based on {metric.runs} runs</small></div>)}</div> : <NoData>No resource history recorded.</NoData>}
+      {analysisTab === 'resources' ? <Analysis title="Resource economy" subtitle={`What runs gained, spent, consumed, or risked · ${scope}`} wide>
+        <SectionHelp><strong>Use the Act filter when comparing resource plans.</strong> Winning runs survive longer and therefore have more opportunities to gain or spend resources when all Acts are combined. “Typical” is the median per run, and the winner-versus-loss comparison is an association—not proof that increasing a number will cause more wins.</SectionHelp>
+        {resources.length ? <div className="table-wrap"><table className="analytics-table resource-table"><thead><tr><th>Resource</th><th>Typical per run <Info text="The median total in the selected scope, with a bootstrap uncertainty range." /></th><th>Winning vs losing runs <Info text="Typical value in completed winning runs compared with completed losing runs." /></th><th>Coverage</th></tr></thead><tbody>{resources.map((metric) => <tr key={metric.key}><td><strong>{metric.label} <Info text={metric.description} /></strong></td><td><strong>{number(metric.median)}</strong><small>Likely typical range: {interval(metric.interval.low, metric.interval.high)}</small></td><td>{metric.outcomeDelta === undefined ? <strong>Needs wins and losses</strong> : <><strong>{metric.outcomeDelta > 0 ? '+' : ''}{number(metric.outcomeDelta)} in winning runs</strong><small>Winners {number(metric.winningMedian!)} · losses {number(metric.losingMedian!)}</small><small>Possible difference: {signedInterval(metric.outcomeDeltaInterval!.low, metric.outcomeDeltaInterval!.high)}</small></>}</td><td><strong>{metric.runs} completed runs</strong><small>{metric.winningRuns} winning · {metric.losingRuns} losing</small></td></tr>)}</tbody></table></div> : <NoData>No completed resource history exists in this scope.</NoData>}
+      </Analysis> : null}
+
+      {analysisTab === 'trends' ? <Analysis title="Progress trends" subtitle={`How your latest runs compare with the previous set · ${scope}`} wide>
+        <SectionHelp><strong>Use this to spot changes worth investigating, not to judge a short streak.</strong> The latest {progress.windowSize} completed runs are compared with the preceding {progress.windowSize}. Character, difficulty, patch, and Act filters still apply; wide ranges or fewer than a full window mean the direction is uncertain.</SectionHelp>
+        {progress.comparisons.length ? <><div className="progress-grid">{progress.comparisons.map((metric) => <article key={metric.key}><span>{metric.label}</span><strong>{metric.delta > 0 ? '+' : ''}{number(metric.delta)} {metric.unit}</strong><small>Latest: {number(metric.recent)} · previous: {number(metric.previous)}</small><small>Latest possible range: {interval(metric.recentInterval.low, metric.recentInterval.high, ` ${metric.unit}`)}</small><small>Based on {metric.recentN} recent and {metric.previousN} previous runs</small></article>)}</div><div className="subsection-heading"><h3>Rolling win rate</h3><p>Each bar is the win rate across up to 10 completed runs at that point in the archive.</p></div><div className="trend-bars" role="img" aria-label="Rolling win rate over the latest completed runs">{trend.slice(-20).map((item) => <div key={item.index} title={`Run ${item.index}: ${formatRate(item.rate)}`}><span style={{ height: `${Math.max(3, item.rate * 100)}%` }}></span><small>{item.index % 5 === 0 || item.index === trend.length ? item.index : ''}</small></div>)}</div></> : <NoData>Need completed runs in both the recent and previous windows.</NoData>}
+      </Analysis> : null}
+
+      {analysisTab === 'records' ? <Analysis title="Streaks & personal records" subtitle={`Milestones worth carrying into the next climb · ${scope}`} wide>
+        <SectionHelp><strong>Records use completed runs in chronological order.</strong> Character and other page filters define the record book you are viewing. Boss-reach streaks use runs with room history, plus victories; runs without enough data are excluded. Scores appear only when the imported <code>.run</code> file records one.</SectionHelp>
+        <div className="record-hero-grid">
+          <article><span>Current win streak</span><strong>{records.currentWinStreak}</strong><small>Consecutive wins at the end of this scope</small></article>
+          <article><span>Longest win streak</span><strong>{records.longestWinStreak}</strong><small>Best stretch across {records.completedRuns} completed runs</small></article>
+          <article><span>Current boss-reach streak</span><strong>{records.currentBossReachStreak}</strong><small>Latest consecutive runs that reached a Boss</small></article>
+          <article><span>Longest boss-reach streak</span><strong>{records.longestBossReachStreak}</strong><small>Based on {records.bossReachRuns} runs with enough evidence</small></article>
+          <article className="score-record"><span>Personal score record</span><strong>{records.bestScoreRun ? records.bestScoreRun.score!.toLocaleString() : 'Not recorded'}</strong><small>{records.bestScoreRun ? `${records.bestScoreRun.character} · A${records.bestScoreRun.ascension} · ${records.bestScoreRun.date}` : 'Re-import current .run files after score support is available in the game record'}</small><small>{records.scoredRuns} of {records.completedRuns} completed runs include a score</small></article>
+        </div>
+        <div className="records-columns">
+          <div><div className="subsection-heading first"><h3>Best Ascension win by character</h3><p>Highest difficulty cleared in the current scope.</p></div>{records.bestAscensionByCharacter.length ? <div className="rank-list">{records.bestAscensionByCharacter.map((item) => <div key={item.character}><span>{item.character}<small>{item.date}{item.score === undefined ? '' : ` · ${item.score.toLocaleString()} score`}</small></span><strong>A{item.ascension}</strong></div>)}</div> : <NoData>No victories exist in this scope.</NoData>}</div>
+          <div><div className="subsection-heading first"><h3>Patch-specific records</h3><p>Keep milestones from different balance versions separate.</p></div>{records.patchRecords.length ? <div className="table-wrap"><table className="analytics-table records-table"><thead><tr><th>Patch</th><th>Results</th><th>Longest streak</th><th>Highest clear</th><th>Best score</th></tr></thead><tbody>{records.patchRecords.map((item) => <tr key={item.patch}><td><strong>{item.patch}</strong></td><td><strong>{item.wins}–{item.runs - item.wins}</strong><small>{item.runs} completed runs</small></td><td><strong>{item.longestWinStreak}</strong></td><td><strong>{item.bestAscensionWin === undefined ? 'No win' : `A${item.bestAscensionWin}`}</strong></td><td><strong>{item.bestScore === undefined ? 'Not recorded' : item.bestScore.toLocaleString()}</strong></td></tr>)}</tbody></table></div> : <NoData>No patch identifiers were recorded in this scope.</NoData>}</div>
+        </div>
       </Analysis> : null}
     </div>
   </div>
@@ -207,5 +230,8 @@ function SectionHelp({ children }: { children: ReactNode }) { return <details cl
 function ShowAll({ expanded, total, shown, onClick }: { expanded: boolean; total: number; shown: number; onClick: () => void }) {
   if (total <= 10) return null
   return <button className="show-all" type="button" onClick={onClick}>{expanded ? 'Show top 10' : `Show all ${total}`}<small>{expanded ? '' : `Currently showing ${shown}`}</small></button>
+}
+function DeckConstructionColumn({ title, groups, empty }: { title: string; groups: ReturnType<typeof deckConstructionStats>['deckSize']; empty: string }) {
+  return <div><h3>{title}</h3>{groups.length ? <div className="rank-list">{groups.map((group) => <div key={group.key}><span>{group.label}<small>{group.wins} of {group.runs} completed runs won</small><small>Possible rate: {pct(group.winRateInterval.low)}–{pct(group.winRateInterval.high)}</small></span><strong>{formatRate(group.winRate)}</strong></div>)}</div> : <NoData>{empty}</NoData>}</div>
 }
 function NoData({ children }: { children: ReactNode }) { return <div className="no-data">{children}</div> }

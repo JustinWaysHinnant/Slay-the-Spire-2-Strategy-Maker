@@ -52,6 +52,8 @@ export interface Run {
   killedBy?: string
   seed?: string
   buildId?: string
+  startTime?: number
+  score?: number
   acts?: string[]
   durationSeconds?: number
   gameMode?: string

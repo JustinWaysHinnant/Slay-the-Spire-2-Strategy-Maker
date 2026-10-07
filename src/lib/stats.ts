@@ -130,7 +130,92 @@ export interface EncounterPressureStat {
   runWinRate?: number
   runWinInterval?: Interval
 }
-export interface ResourceMetric { key: string; label: string; description: string; median: number; interval: Interval; runs: number }
+export interface ResourceMetric {
+  key: string
+  label: string
+  description: string
+  median: number
+  interval: Interval
+  runs: number
+  winningRuns: number
+  losingRuns: number
+  winningMedian?: number
+  losingMedian?: number
+  outcomeDelta?: number
+  outcomeDeltaInterval?: Interval
+}
+export interface DeckConstructionGroup {
+  key: string
+  label: string
+  runs: number
+  wins: number
+  winRate: number
+  winRateInterval: Interval
+}
+export interface DeckConstructionStats {
+  deckSize: DeckConstructionGroup[]
+  removals: DeckConstructionGroup[]
+  upgrades: DeckConstructionGroup[]
+}
+export interface RouteOutcomeStat {
+  name: string
+  visits: number
+  archiveShare: number
+  runsWithVisit: number
+  completedRuns: number
+  medianRunShare: number
+  runShareInterval: Interval
+  winningRuns: number
+  losingRuns: number
+  winningMedianShare?: number
+  losingMedianShare?: number
+  outcomeShareDelta?: number
+  outcomeShareDeltaInterval?: Interval
+}
+export interface ProgressComparison {
+  key: 'win-rate' | 'final-floor' | 'duration' | 'damage'
+  label: string
+  unit: 'points' | 'floors' | 'minutes' | 'HP'
+  recent: number
+  previous: number
+  delta: number
+  recentInterval: Interval
+  previousInterval: Interval
+  recentN: number
+  previousN: number
+}
+export interface ProgressWindowStats {
+  windowSize: number
+  recentRuns: number
+  previousRuns: number
+  comparisons: ProgressComparison[]
+}
+export interface CharacterRecord {
+  character: Character
+  ascension: number
+  date: string
+  score?: number
+}
+export interface PatchRecord {
+  patch: string
+  runs: number
+  wins: number
+  longestWinStreak: number
+  bestAscensionWin?: number
+  bestScore?: number
+}
+export interface PersonalRecordStats {
+  completedRuns: number
+  currentWinStreak: number
+  longestWinStreak: number
+  currentBossReachStreak: number
+  longestBossReachStreak: number
+  bossReachRuns: number
+  scoredRuns: number
+  bestScoreRun?: Run
+  bestAscensionByCharacter: CharacterRecord[]
+  patchRecords: PatchRecord[]
+}
 export interface ActEconomyStat {
   act: number
   entrants: number
@@ -522,18 +607,209 @@ export function encounterPressureStats(runs: Run[], act?: number): EncounterPres
   }).sort((a, b) => b.deathRate - a.deathRate || (b.medianHpLoss ?? 0) - (a.medianHpLoss ?? 0) || b.visits - a.visits)
 }
 
+/** Describes completed-run outcomes by final deck shape without implying causality. */
+export function deckConstructionStats(runs: Run[]): DeckConstructionStats {
+  const completed = runs.filter(isCounted)
+  const group = (definitions: { key: string; label: string; matches: (run: Run) => boolean }[], eligible = completed) => definitions.flatMap((definition) => {
+    const matching = eligible.filter(definition.matches)
+    if (!matching.length) return []
+    const wins = matching.filter((run) => run.outcome === 'win').length
+    return [{ key: definition.key, label: definition.label, runs: matching.length, wins, winRate: wins / matching.length, winRateInterval: wilsonInterval(wins, matching.length) }]
+  })
+  const removalCount = (run: Run) => run.cardChanges
+    ? run.cardChanges.reduce((total, change) => total + change.removed.length, 0)
+    : run.cardsRemovedDuringRun?.length ?? 0
+  const upgradeCount = (run: Run) => run.cardChanges
+    ? run.cardChanges.reduce((total, change) => total + change.upgraded.length, 0)
+    : run.cards.filter((card) => card.upgraded).length
+  const removalEligible = completed.filter((run) => run.cardChanges !== undefined || run.cardsRemovedDuringRun !== undefined)
+  return {
+    deckSize: group([
+      { key: '15-or-less', label: '15 or fewer cards', matches: (run) => run.cards.length <= 15 },
+      { key: '16-20', label: '16–20 cards', matches: (run) => run.cards.length >= 16 && run.cards.length <= 20 },
+      { key: '21-25', label: '21–25 cards', matches: (run) => run.cards.length >= 21 && run.cards.length <= 25 },
+      { key: '26-plus', label: '26 or more cards', matches: (run) => run.cards.length >= 26 },
+    ]),
+    removals: group([
+      { key: '0', label: 'No removals', matches: (run) => removalCount(run) === 0 },
+      { key: '1', label: '1 removal', matches: (run) => removalCount(run) === 1 },
+      { key: '2', label: '2 removals', matches: (run) => removalCount(run) === 2 },
+      { key: '3-plus', label: '3+ removals', matches: (run) => removalCount(run) >= 3 },
+    ], removalEligible),
+    upgrades: group([
+      { key: '0', label: 'No upgrades', matches: (run) => upgradeCount(run) === 0 },
+      { key: '1-2', label: '1–2 upgrades', matches: (run) => upgradeCount(run) >= 1 && upgradeCount(run) <= 2 },
+      { key: '3-5', label: '3–5 upgrades', matches: (run) => upgradeCount(run) >= 3 && upgradeCount(run) <= 5 },
+      { key: '6-plus', label: '6+ upgrades', matches: (run) => upgradeCount(run) >= 6 },
+    ]),
+  }
+}
+
+/** Compares the share of each completed run's route spent in a room type. */
+export function routeOutcomeStats(runs: Run[], act?: number): RouteOutcomeStat[] {
+  const completed = runs.filter(isCounted).flatMap((run) => {
+    const nodes = nodesInAct(run, act)
+    return nodes.length ? [{ run, nodes }] : []
+  })
+  const roomName = (node: NonNullable<Run['nodes']>[number]) => node.roomType ?? node.mapType ?? 'Unknown'
+  const names = [...new Set(completed.flatMap(({ nodes }) => nodes.map(roomName)))]
+  const totalVisits = completed.reduce((sum, { nodes }) => sum + nodes.length, 0)
+  return names.map((name) => {
+    const shares = completed.map(({ run, nodes }) => ({ run, share: nodes.filter((node) => roomName(node) === name).length / nodes.length }))
+    const winners = shares.filter(({ run }) => run.outcome === 'win').map(({ share }) => share)
+    const losers = shares.filter(({ run }) => run.outcome === 'loss').map(({ share }) => share)
+    const winningMedianShare = winners.length ? median(winners) : undefined
+    const losingMedianShare = losers.length ? median(losers) : undefined
+    let outcomeShareDelta: number | undefined
+    let outcomeShareDeltaInterval: Interval | undefined
+    if (winningMedianShare !== undefined && losingMedianShare !== undefined) {
+      outcomeShareDelta = (winningMedianShare - losingMedianShare) * 100
+      const winInterval = bootstrapMedianInterval(winners), lossInterval = bootstrapMedianInterval(losers)
+      outcomeShareDeltaInterval = { low: (winInterval.low - lossInterval.high) * 100, high: (winInterval.high - lossInterval.low) * 100 }
+    }
+    const visits = completed.reduce((sum, { nodes }) => sum + nodes.filter((node) => roomName(node) === name).length, 0)
+    const values = shares.map(({ share }) => share)
+    return {
+      name,
+      visits,
+      archiveShare: totalVisits ? visits / totalVisits : 0,
+      runsWithVisit: shares.filter(({ share }) => share > 0).length,
+      completedRuns: completed.length,
+      medianRunShare: median(values),
+      runShareInterval: bootstrapMedianInterval(values),
+      winningRuns: winners.length,
+      losingRuns: losers.length,
+      winningMedianShare,
+      losingMedianShare,
+      outcomeShareDelta,
+      outcomeShareDeltaInterval,
+    }
+  }).sort((a, b) => b.visits - a.visits || a.name.localeCompare(b.name))
+}
+
+/** Compares the latest completed runs with the immediately preceding window. */
+export function progressWindowStats(runs: Run[], windowSize = 10, act?: number): ProgressWindowStats {
+  if (!Number.isInteger(windowSize) || windowSize < 1) throw new Error('windowSize must be a positive integer')
+  const completed = runs.filter(isCounted).sort((a, b) => b.date.localeCompare(a.date))
+  const recent = completed.slice(0, windowSize)
+  const previous = completed.slice(windowSize, windowSize * 2)
+  const comparisons: ProgressComparison[] = []
+  if (recent.length && previous.length) {
+    const recentWins = recent.filter((run) => run.outcome === 'win').length
+    const previousWins = previous.filter((run) => run.outcome === 'win').length
+    const recentRate = recentWins / recent.length, previousRate = previousWins / previous.length
+    const recentWinInterval = wilsonInterval(recentWins, recent.length), previousWinInterval = wilsonInterval(previousWins, previous.length)
+    comparisons.push({
+      key: 'win-rate', label: 'Win rate', unit: 'points', recent: recentRate * 100, previous: previousRate * 100,
+      delta: (recentRate - previousRate) * 100,
+      recentInterval: { low: recentWinInterval.low * 100, high: recentWinInterval.high * 100 },
+      previousInterval: { low: previousWinInterval.low * 100, high: previousWinInterval.high * 100 },
+      recentN: recent.length, previousN: previous.length,
+    })
+    const addMedian = (key: ProgressComparison['key'], label: string, unit: ProgressComparison['unit'], recentValues: number[], previousValues: number[]) => {
+      if (!recentValues.length || !previousValues.length) return
+      const recentMedian = median(recentValues), previousMedian = median(previousValues)
+      comparisons.push({
+        key, label, unit, recent: recentMedian, previous: previousMedian, delta: recentMedian - previousMedian,
+        recentInterval: bootstrapMedianInterval(recentValues), previousInterval: bootstrapMedianInterval(previousValues),
+        recentN: recentValues.length, previousN: previousValues.length,
+      })
+    }
+    addMedian('final-floor', 'Final floor', 'floors', recent.map((run) => run.floor), previous.map((run) => run.floor))
+    addMedian('duration', 'Run length', 'minutes', recent.flatMap((run) => run.durationSeconds === undefined ? [] : [run.durationSeconds / 60]), previous.flatMap((run) => run.durationSeconds === undefined ? [] : [run.durationSeconds / 60]))
+    const damage = (window: Run[]) => window.flatMap((run) => nodesInAct(run, act).length ? [nodesInAct(run, act).reduce((sum, node) => sum + (node.damageTaken ?? 0), 0)] : [])
+    addMedian('damage', 'Recorded combat damage', 'HP', damage(recent), damage(previous))
+  }
+  return { windowSize, recentRuns: recent.length, previousRuns: previous.length, comparisons }
+}
+
+function chronology(run: Run) {
+  const importedTime = Number(run.id.split(':').at(-1))
+  return run.startTime ?? (Number.isFinite(importedTime) ? importedTime : Date.parse(run.date) / 1000)
+}
+
+function streak(values: boolean[]) {
+  let current = 0, longest = 0
+  for (const value of values) {
+    current = value ? current + 1 : 0
+    longest = Math.max(longest, current)
+  }
+  return { current, longest }
+}
+
+/** Summarizes durable personal milestones from completed runs in chronological order. */
+export function personalRecordStats(runs: Run[]): PersonalRecordStats {
+  const completed = runs.filter(isCounted).sort((a, b) => chronology(a) - chronology(b) || a.id.localeCompare(b.id))
+  const wins = streak(completed.map((run) => run.outcome === 'win'))
+  const bossEligible = completed.filter((run) => run.outcome === 'win' || Boolean(run.nodes?.length))
+  const reachedBoss = (run: Run) => run.outcome === 'win' || Boolean(run.nodes?.some((node) => node.roomType?.toLowerCase() === 'boss' || node.mapType?.toLowerCase() === 'boss'))
+  const bosses = streak(bossEligible.map(reachedBoss))
+  const scored = completed.filter((run): run is Run & { score: number } => run.score !== undefined && Number.isFinite(run.score))
+  const bestScoreRun = scored.sort((a, b) => b.score - a.score || chronology(b) - chronology(a))[0]
+  const bestAscensionByCharacter = ([...new Set(completed.map((run) => run.character))] as Character[]).flatMap((character) => {
+    const best = completed.filter((run) => run.character === character && run.outcome === 'win')
+      .sort((a, b) => b.ascension - a.ascension || (b.score ?? -1) - (a.score ?? -1) || chronology(b) - chronology(a))[0]
+    return best ? [{ character, ascension: best.ascension, date: best.date, score: best.score }] : []
+  }).sort((a, b) => b.ascension - a.ascension || a.character.localeCompare(b.character))
+  const patchRecords = [...new Set(completed.map((run) => run.buildId).filter((value): value is string => Boolean(value)))].map((patch) => {
+    const patchRuns = completed.filter((run) => run.buildId === patch)
+    const patchWins = patchRuns.filter((run) => run.outcome === 'win')
+    const patchStreak = streak(patchRuns.map((run) => run.outcome === 'win'))
+    const patchScores = patchRuns.flatMap((run) => run.score === undefined ? [] : [run.score])
+    return {
+      patch,
+      runs: patchRuns.length,
+      wins: patchWins.length,
+      longestWinStreak: patchStreak.longest,
+      bestAscensionWin: patchWins.length ? Math.max(...patchWins.map((run) => run.ascension)) : undefined,
+      bestScore: patchScores.length ? Math.max(...patchScores) : undefined,
+    }
+  }).sort((a, b) => b.patch.localeCompare(a.patch))
+  return {
+    completedRuns: completed.length,
+    currentWinStreak: wins.current,
+    longestWinStreak: wins.longest,
+    currentBossReachStreak: bosses.current,
+    longestBossReachStreak: bosses.longest,
+    bossReachRuns: bossEligible.length,
+    scoredRuns: scored.length,
+    bestScoreRun,
+    bestAscensionByCharacter,
+    patchRecords,
+  }
+}
+
 export function resourceMetrics(runs: Run[], act?: number): ResourceMetric[] {
-  const complete = runs.filter((run) => run.nodes?.length)
+  const complete = runs.filter(isCounted).filter((run) => nodesInAct(run, act).length)
   const definitions: { key: string; label: string; description: string; value: (run: Run) => number }[] = [
-    { key: 'hp', label: 'HP lost', description: 'Median combat damage paid during the selected scope.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.damageTaken ?? 0), 0) },
-    { key: 'elites', label: 'Elite fights', description: 'Median elite encounters taken per run.', value: (run) => nodesInAct(run, act).filter((node) => node.roomType === 'Elite' || node.mapType === 'Elite').length },
-    { key: 'shops', label: 'Shop visits', description: 'Median merchant rooms entered per run.', value: (run) => nodesInAct(run, act).filter((node) => node.roomType === 'Shop' || node.mapType === 'Shop').length },
-    { key: 'rests', label: 'Rest-site visits', description: 'Median rest sites reached, regardless of the option chosen.', value: (run) => nodesInAct(run, act).filter((node) => node.restChoices?.length || node.roomType === 'Rest Site').length },
-    { key: 'gold-spent', label: 'Gold spent', description: 'Median gold converted into cards, relics, potions, or removals.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.goldSpent ?? 0), 0) },
-    { key: 'potions', label: 'Potions used', description: 'Median potions consumed rather than carried or discarded.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.potionsUsed?.length ?? 0), 0) },
+    { key: 'hp', label: 'HP lost', description: 'Total recorded combat damage paid during the selected scope.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.damageTaken ?? 0), 0) },
+    { key: 'healing', label: 'HP healed', description: 'Total recorded HP restored during the selected scope.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.healed ?? 0), 0) },
+    { key: 'gold-gained', label: 'Gold gained', description: 'Total recorded gold earned during the selected scope.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.goldGained ?? 0), 0) },
+    { key: 'gold-spent', label: 'Gold spent', description: 'Gold converted into cards, relics, potions, or removals.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.goldSpent ?? 0), 0) },
+    { key: 'gold-lost', label: 'Gold lost', description: 'Gold lost without being recorded as a purchase.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.goldLost ?? 0), 0) },
+    { key: 'potions', label: 'Potions used', description: 'Potions consumed rather than carried or discarded.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.potionsUsed?.length ?? 0), 0) },
+    { key: 'potions-discarded', label: 'Potions discarded', description: 'Potions discarded without being consumed.', value: (run) => nodesInAct(run, act).reduce((sum, node) => sum + (node.potionsDiscarded?.length ?? 0), 0) },
+    { key: 'shops', label: 'Shop visits', description: 'Merchant rooms entered during the selected scope.', value: (run) => nodesInAct(run, act).filter((node) => node.roomType === 'Shop' || node.mapType === 'Shop').length },
+    { key: 'rests', label: 'Rest-site visits', description: 'Rest sites reached, regardless of the option chosen.', value: (run) => nodesInAct(run, act).filter((node) => node.restChoices?.length || node.roomType === 'Rest Site').length },
+    { key: 'elites', label: 'Elite fights', description: 'Elite encounters taken during the selected scope.', value: (run) => nodesInAct(run, act).filter((node) => node.roomType === 'Elite' || node.mapType === 'Elite').length },
   ]
   return definitions.map(({ key, label, description, value }) => {
-    const values = complete.map(value)
-    return { key, label, description, median: median(values), interval: bootstrapMedianInterval(values), runs: values.length }
+    const observations = complete.map((run) => ({ run, value: value(run) }))
+    const values = observations.map((item) => item.value)
+    const winning = observations.filter(({ run }) => run.outcome === 'win').map((item) => item.value)
+    const losing = observations.filter(({ run }) => run.outcome === 'loss').map((item) => item.value)
+    const winningMedian = winning.length ? median(winning) : undefined
+    const losingMedian = losing.length ? median(losing) : undefined
+    let outcomeDelta: number | undefined
+    let outcomeDeltaInterval: Interval | undefined
+    if (winningMedian !== undefined && losingMedian !== undefined) {
+      outcomeDelta = winningMedian - losingMedian
+      const winInterval = bootstrapMedianInterval(winning), lossInterval = bootstrapMedianInterval(losing)
+      outcomeDeltaInterval = { low: winInterval.low - lossInterval.high, high: winInterval.high - lossInterval.low }
+    }
+    return {
+      key, label, description, median: median(values), interval: bootstrapMedianInterval(values), runs: values.length,
+      winningRuns: winning.length, losingRuns: losing.length, winningMedian, losingMedian, outcomeDelta, outcomeDeltaInterval,
+    }
   })
 }
